@@ -4,6 +4,8 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -45,16 +47,18 @@ fun GlassCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.()
     }
 }
 
-/** Score ring with gradient sweep, soft glow and fill animation. */
+/** Score ring with gradient sweep, soft glow and fill animation.
+ *  Counts up from 0 on first composition. */
 @Composable
 fun ScoreRing(score: Float, label: String, modifier: Modifier = Modifier, sizeDp: Int = 132) {
     val sc = LocalScoreColor.current
     val p = LocalPalette.current
-    val animated by animateFloatAsState(
-        targetValue = score.coerceIn(0f, 100f),
-        animationSpec = tween(900, easing = FastOutSlowInEasing),
-        label = "score",
-    )
+    val anim = remember { Animatable(0f) }
+    LaunchedEffect(score) {
+        anim.animateTo(score.coerceIn(0f, 100f),
+            tween(900, easing = FastOutSlowInEasing))
+    }
+    val animated = anim.value
     Box(modifier.size(sizeDp.dp), contentAlignment = Alignment.Center) {
         Box(
             Modifier.size(sizeDp.dp * 0.72f)
@@ -103,11 +107,12 @@ fun ScoreRing(score: Float, label: String, modifier: Modifier = Modifier, sizeDp
 fun MetricBar(name: String, score: Float?, valueText: String, modifier: Modifier = Modifier) {
     val sc = LocalScoreColor.current
     val p = LocalPalette.current
-    val animated by animateFloatAsState(
-        targetValue = (score ?: 0f).coerceIn(0f, 100f),
-        animationSpec = tween(800, easing = FastOutSlowInEasing),
-        label = "bar",
-    )
+    val anim = remember { Animatable(0f) }
+    LaunchedEffect(score) {
+        anim.animateTo((score ?: 0f).coerceIn(0f, 100f),
+            tween(800, easing = FastOutSlowInEasing))
+    }
+    val animated = anim.value
     Column(modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(name, style = MaterialTheme.typography.labelMedium,
@@ -392,6 +397,58 @@ fun Sparkline(values: List<Float>, modifier: Modifier = Modifier, color: Color? 
         drawCircle(col, 3.5f.dp.toPx(), Offset(
             (values.size - 1) * step,
             size.height - ((values.last() - min) / range) * size.height))
+    }
+}
+
+/** Squashes the element while pressed, springing back on release. */
+@Composable
+fun Modifier.bouncyPress(interactionSource: MutableInteractionSource): Modifier {
+    val pressed by interactionSource.collectIsPressedAsState()
+    val s by animateFloatAsState(
+        targetValue = if (pressed) 0.94f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium),
+        label = "press",
+    )
+    return this.graphicsLayer { scaleX = s; scaleY = s }
+}
+
+/** Content that fades in and rises once, staggered by [index] (~80 ms step). */
+@Composable
+fun RiseIn(index: Int, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val anim = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        anim.animateTo(1f,
+            tween(460, delayMillis = index * 80, easing = FastOutSlowInEasing))
+    }
+    Box(modifier.graphicsLayer {
+        alpha = anim.value
+        translationY = (1f - anim.value) * 30.dp.toPx()
+    }) { content() }
+}
+
+/** Soft diagonal light band sweeping left→right, for gradient CTAs. */
+@Composable
+fun ShimmerBand(modifier: Modifier = Modifier) {
+    val t = rememberInfiniteTransition(label = "shimmer")
+    val x by t.animateFloat(
+        initialValue = -0.45f, targetValue = 1.45f,
+        animationSpec = infiniteRepeatable(tween(2600, easing = LinearEasing)),
+        label = "x",
+    )
+    Canvas(modifier) {
+        val w = size.width
+        val cx = w * x
+        drawRect(
+            Brush.linearGradient(
+                0f to Color.Transparent,
+                0.5f to Color.White.copy(alpha = 0.20f),
+                1f to Color.Transparent,
+                start = Offset(cx - w * 0.28f, 0f),
+                end = Offset(cx + w * 0.28f, size.height),
+            )
+        )
     }
 }
 

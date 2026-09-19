@@ -12,16 +12,31 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
@@ -29,11 +44,18 @@ import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
@@ -228,32 +250,11 @@ fun SpotkerjaApp(vm: AppViewModel, widgetFastScan: MutableState<Boolean>) {
     Scaffold(
         bottomBar = {
             if (showBottomBar) {
-                NavigationBar(
-                    containerColor = p.card,
-                    tonalElevation = 0.dp,
-                ) {
-                    TABS.forEach { tab ->
-                        NavigationBarItem(
-                            selected = route == tab.route,
-                            onClick = {
-                                if (route != tab.route) {
-                                    nav.navigate(tab.route) {
-                                        popUpTo(Routes.HOME) { saveState = true }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                }
-                            },
-                            icon = { Icon(tab.icon, tab.label) },
-                            label = { Text(tab.label) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = p.bg,
-                                selectedTextColor = p.accent,
-                                indicatorColor = p.accent,
-                                unselectedIconColor = p.textDim,
-                                unselectedTextColor = p.textDim,
-                            ),
-                        )
+                FloatingNavBar(route) { r ->
+                    nav.navigate(r) {
+                        popUpTo(Routes.HOME) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
                     }
                 }
             }
@@ -398,6 +399,70 @@ fun SpotkerjaApp(vm: AppViewModel, widgetFastScan: MutableState<Boolean>) {
         if (!onboarded) {
             OnboardingOverlay(onDone = vm::markOnboarded)
         }
+        }
+    }
+}
+
+/** Floating bottom bar — a soft accent pill slides under the active tab. */
+@Composable
+private fun FloatingNavBar(current: String?, onSelect: (String) -> Unit) {
+    val p = LocalPalette.current
+    val haptics = LocalHapticFeedback.current
+    Surface(
+        Modifier.fillMaxWidth()
+            .padding(horizontal = 18.dp)
+            .padding(bottom = 14.dp),
+        shape = RoundedCornerShape(26.dp),
+        color = p.card,
+        border = BorderStroke(1.dp, p.border),
+        tonalElevation = 4.dp,
+        shadowElevation = 14.dp,
+    ) {
+        BoxWithConstraints(Modifier.padding(6.dp)) {
+            val itemW = maxWidth / TABS.size
+            val selIdx = TABS.indexOfFirst { it.route == current }.coerceAtLeast(0)
+            val pillX by animateDpAsState(
+                targetValue = itemW * selIdx,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMediumLow),
+                label = "navPill",
+            )
+            Box(
+                Modifier.offset(x = pillX)
+                    .width(itemW).height(60.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(p.accent.copy(alpha = 0.16f))
+            )
+            Row(Modifier.fillMaxWidth().height(60.dp)) {
+                TABS.forEach { tab ->
+                    val sel = current == tab.route
+                    val tint by animateColorAsState(
+                        if (sel) p.accent else p.textDim, label = "tabTint")
+                    val iconScale by animateFloatAsState(
+                        if (sel) 1.1f else 1f,
+                        spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                        label = "tabScale")
+                    Box(
+                        Modifier.weight(1f).fillMaxHeight()
+                            .clip(RoundedCornerShape(20.dp))
+                            .clickable {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onSelect(tab.route)
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(tab.icon, tab.label,
+                                Modifier.size(22.dp).scale(iconScale), tint = tint)
+                            Text(tab.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = tint,
+                                fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal)
+                        }
+                    }
+                }
+            }
         }
     }
 }

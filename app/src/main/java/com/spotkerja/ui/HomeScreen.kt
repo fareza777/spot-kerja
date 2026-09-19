@@ -5,6 +5,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
@@ -37,7 +38,10 @@ import com.spotkerja.data.ScanSession
 import com.spotkerja.data.WorkMode
 import com.spotkerja.settings.ScanPreset
 import com.spotkerja.ui.components.GlassCard
+import com.spotkerja.ui.components.RiseIn
 import com.spotkerja.ui.components.SectionHeader
+import com.spotkerja.ui.components.ShimmerBand
+import com.spotkerja.ui.components.bouncyPress
 import com.spotkerja.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -78,6 +82,7 @@ fun HomeScreen(
         contentPadding = PaddingValues(top = 28.dp, bottom = 24.dp),
     ) {
         item {
+            RiseIn(0) {
             // Hero card — layered gradient, decorative rings, breathing icon.
             val breath = rememberInfiniteTransition(label = "hero")
             val iconPulse by breath.animateFloat(
@@ -170,10 +175,12 @@ fun HomeScreen(
                     }
                 }
             }
+            }
         }
 
         if (presets.isNotEmpty()) {
             item {
+                RiseIn(1) {
                 SectionHeader("Scan presets")
                 Spacer(Modifier.height(10.dp))
                 Row(
@@ -197,10 +204,12 @@ fun HomeScreen(
                         }
                     }
                 }
+                }
             }
         }
 
         item {
+            RiseIn(2) {
             SectionHeader("Evaluation mode")
             Spacer(Modifier.height(10.dp))
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -211,9 +220,11 @@ fun HomeScreen(
                     }
                 }
             }
+            }
         }
 
         item {
+            RiseIn(3) {
             GlassCard {
                 Column(Modifier.padding(18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -258,9 +269,11 @@ fun HomeScreen(
                     }
                 }
             }
+            }
         }
 
         item {
+            RiseIn(4) {
             GlassCard {
                 Column(Modifier.padding(18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -338,17 +351,21 @@ fun HomeScreen(
                     }
                 }
             }
+            }
         }
 
         item {
+            RiseIn(5) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 // Fast Scan — glassy dark dengan border accent
+                val fastSrc = remember { MutableInteractionSource() }
                 Surface(
                     onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         onFastScan()
                     },
-                    modifier = Modifier.weight(1f).height(62.dp),
+                    interactionSource = fastSrc,
+                    modifier = Modifier.weight(1f).height(62.dp).bouncyPress(fastSrc),
                     shape = RoundedCornerShape(20.dp),
                     color = p.card,
                     border = BorderStroke(1.dp, p.accent.copy(alpha = 0.6f)),
@@ -376,21 +393,28 @@ fun HomeScreen(
                         }
                     }
                 }
-                // Start Scan — CTA gradient utama
+                // Start Scan — CTA gradient utama dengan shimmer sweep
+                val startSrc = remember { MutableInteractionSource() }
                 Surface(
                     onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         onStartScan()
                     },
-                    modifier = Modifier.weight(1.2f).height(62.dp),
+                    interactionSource = startSrc,
+                    modifier = Modifier.weight(1.2f).height(62.dp).bouncyPress(startSrc),
                     shape = RoundedCornerShape(20.dp),
                     color = Color.Transparent,
                 ) {
-                    Row(
+                    Box(
                         Modifier.fillMaxSize()
+                            .clip(RoundedCornerShape(20.dp))
                             .background(
                                 Brush.horizontalGradient(
-                                    listOf(p.accent, p.accent2)))
+                                    listOf(p.accent, p.accent2))),
+                    ) {
+                    ShimmerBand(Modifier.matchParentSize())
+                    Row(
+                        Modifier.fillMaxSize()
                             .padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -406,7 +430,9 @@ fun HomeScreen(
                                 color = p.bg.copy(alpha = 0.75f))
                         }
                     }
+                    }
                 }
+            }
             }
             Text(
                 "Location & mic permissions are requested on start. Everything runs on-device.",
@@ -417,8 +443,12 @@ fun HomeScreen(
         }
 
         if (history.isNotEmpty()) {
-            item { SectionHeader("Recent scans") }
-            items(history.take(3)) { s -> HistoryRow(s, onClick = { onOpenSession(s) }) }
+            item { RiseIn(6) { SectionHeader("Recent scans") } }
+            items(history.take(3)) { s ->
+                Box(Modifier.animateItem()) {
+                    HistoryRow(s, onClick = { onOpenSession(s) })
+                }
+            }
         }
 
         item {
@@ -503,12 +533,14 @@ private fun ModeCard(m: WorkMode, selected: Boolean, modifier: Modifier, onClick
     val haptics = LocalHapticFeedback.current
     val selAnim by animateFloatAsState(
         if (selected) 1f else 0f, tween(280), label = "sel")
+    val src = remember { MutableInteractionSource() }
     Card(
         onClick = {
             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             onClick()
         },
-        modifier = modifier.scale(1f + selAnim * 0.02f),
+        interactionSource = src,
+        modifier = modifier.scale(1f + selAnim * 0.02f).bouncyPress(src),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
         border = BorderStroke(
@@ -566,10 +598,13 @@ private fun modeTagline(m: WorkMode) = when (m) {
 @Composable
 private fun StepperBtn(icon: ImageVector, enabled: Boolean, onClick: () -> Unit) {
     val p = LocalPalette.current
+    val src = remember { MutableInteractionSource() }
     Surface(
         onClick = onClick, enabled = enabled,
+        interactionSource = src,
         shape = androidx.compose.foundation.shape.CircleShape,
         color = if (enabled) p.accent.copy(alpha = 0.16f) else Color.Transparent,
+        modifier = Modifier.bouncyPress(src),
     ) {
         Icon(icon, null, Modifier.padding(7.dp).size(16.dp),
             tint = if (enabled) p.accent else p.textDim.copy(alpha = 0.4f))
