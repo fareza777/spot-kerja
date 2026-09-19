@@ -115,15 +115,21 @@ fun ResultsScreen(
             }
         }
 
-        // Radar overlay metrik per-spot (maks 3 teratas).
-        val radarAxes = listOf("Wi-Fi", "Ping", "Jitter", "Loss", "Light",
+        // Radar overlay metrik per-spot (maks 3 teratas). Sumbu yang tidak
+        // punya data sama sekali (semua spot null) tidak ditampilkan.
+        val allAxes = listOf("Wi-Fi", "Ping", "Jitter", "Loss", "Light",
             "Noise", "Facing", "Cell", "Crowd")
-        val radarSeries = sorted.take(3).map { s ->
+        val allSeries = sorted.take(3).map { s ->
             s.label to listOf(s.scores.wifi, s.scores.ping, s.scores.jitter,
                 s.scores.packetLoss, s.scores.light, s.scores.noise,
                 s.scores.orientation, s.scores.cellular, s.scores.wifiCongestion)
         }
-        if (radarSeries.any { s -> s.second.count { it != null } >= 3 }) {
+        val usedIdx = allAxes.indices.filter { i ->
+            allSeries.any { (_, vals) -> vals[i] != null }
+        }
+        val radarAxes = usedIdx.map { allAxes[it] }
+        val radarSeries = allSeries.map { (l, v) -> l to usedIdx.map { v[it] } }
+        if (radarAxes.size >= 3) {
             item {
                 SectionHeader("Metric radar")
                 Spacer(Modifier.height(10.dp))
@@ -133,25 +139,30 @@ fun ResultsScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         RadarChart(radarSeries, radarAxes)
-                        Spacer(Modifier.height(10.dp))
-                        // legend
-                        radarSeries.forEachIndexed { i, (label, _) ->
-                            Row(verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(vertical = 1.dp)) {
-                                Box(Modifier.size(8.dp).clip(RoundedCornerShape(4.dp))
-                                    .background(
-                                        listOf(p.accent, p.gold, p.accent2)[i % 3]))
-                                Spacer(Modifier.width(6.dp))
-                                Text(label, style = MaterialTheme.typography.labelSmall,
-                                    color = p.textDim, maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.height(12.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            radarSeries.forEachIndexed { i, (label, _) ->
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(Modifier.size(8.dp).clip(RoundedCornerShape(4.dp))
+                                        .background(
+                                            listOf(p.accent, p.gold, p.accent2)[i % 3]))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(label, style = MaterialTheme.typography.labelSmall,
+                                        color = p.textDim, maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis)
+                                }
                             }
                         }
-                        Spacer(Modifier.height(4.dp))
-                        Text(radarAxes.joinToString(" · "),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = p.textDim.copy(alpha = 0.6f),
-                            textAlign = TextAlign.Center)
+                        if (sorted.any { it.confidencePct != null && it.confidencePct!! < 100 }) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "Dim axes with no data are hidden. \"—\" in a spot card " +
+                                    "means that metric wasn't measured.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = p.textDim.copy(alpha = 0.7f),
+                                textAlign = TextAlign.Center,
+                            )
+                        }
                     }
                 }
             }

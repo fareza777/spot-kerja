@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -72,6 +73,7 @@ class MainActivity : ComponentActivity() {
     private val widgetFastScan = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         MobileAds.initialize(this)
@@ -152,6 +154,7 @@ fun SpotkerjaApp(vm: AppViewModel, widgetFastScan: MutableState<Boolean>) {
     val fastDuration by vm.fastDurationSec.collectAsState()
     val isFastScan by vm.isFastScan.collectAsState()
     val onboarded by vm.onboarded.collectAsState()
+    val presets by vm.presets.collectAsState()
     var exporting by remember { mutableStateOf(false) }
 
     val scoreColor = LocalScoreColor.current
@@ -184,21 +187,32 @@ fun SpotkerjaApp(vm: AppViewModel, widgetFastScan: MutableState<Boolean>) {
         else activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
+    // Izin mic/lokasi harus selesai SEBELUM scan mulai — kalau tidak, sampler
+    // noise/orientasi kehilangan sampel awal saat dialog izin tampil.
+    var pendingScan by remember { mutableStateOf<(() -> Unit)?>(null) }
     val permLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { }
+    ) { _ ->
+        pendingScan?.invoke()
+        pendingScan = null
+    }
+    fun scanWithPerms(action: () -> Unit) {
+        pendingScan = action
+        permLauncher.launch(arrayOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.RECORD_AUDIO,
+        ))
+    }
 
     // Fast Scan dari home-screen widget — minta izin dulu lalu jalan.
     LaunchedEffect(widgetFastScan.value) {
         if (widgetFastScan.value) {
             widgetFastScan.value = false
-            permLauncher.launch(arrayOf(
-                Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION,
-                Manifest.permission.RECORD_AUDIO,
-            ))
-            vm.fastScanFromWidget()
-            nav.navigate(Routes.SCAN) { launchSingleTop = true }
+            scanWithPerms {
+                vm.fastScanFromWidget()
+                nav.navigate(Routes.SCAN) { launchSingleTop = true }
+            }
         }
     }
 
@@ -280,25 +294,21 @@ fun SpotkerjaApp(vm: AppViewModel, widgetFastScan: MutableState<Boolean>) {
                     onSpotCountChange = vm::setSpotCount,
                     onSpotNameChange = vm::setSpotName,
                     onStartScan = {
-                        permLauncher.launch(arrayOf(
-                            Manifest.permission.ACCESS_FINE_LOCATION,
-                            Manifest.permission.ACCESS_COARSE_LOCATION,
-                            Manifest.permission.RECORD_AUDIO,
-                        ))
-                        vm.startScan()
-                        nav.navigate(Routes.SCAN)
+                        scanWithPerms {
+                            vm.startScan()
+                            nav.navigate(Routes.SCAN)
+                        }
                     },
                     onFastScan = {
-                        permLauncher.launch(arrayOf(
-                            Manifest.permission.ACCESS_FINE_LOCATION,
-                            Manifest.permission.ACCESS_COARSE_LOCATION,
-                            Manifest.permission.RECORD_AUDIO,
-                        ))
-                        vm.startFastScan()
-                        nav.navigate(Routes.SCAN)
+                        scanWithPerms {
+                            vm.startFastScan()
+                            nav.navigate(Routes.SCAN)
+                        }
                     },
                     fastDurationSec = fastDuration,
                     onOpenSession = { s -> nav.navigate(Routes.session(s.id)) },
+                    presets = presets,
+                    onApplyPreset = vm::applyPreset,
                 )
             }
             composable(Routes.SCAN) {
@@ -357,6 +367,12 @@ fun SpotkerjaApp(vm: AppViewModel, widgetFastScan: MutableState<Boolean>) {
                     onScanOptionsChange = vm::setScanOptions,
                     onFastDurationChange = vm::setFastDuration,
                     appVersion = BuildConfig.VERSION_NAME,
+                    presets = presets,
+                    durationSec = duration,
+                    spotCount = spotCount,
+                    onSavePreset = vm::saveCurrentAsPreset,
+                    onApplyPreset = vm::applyPreset,
+                    onDeletePreset = vm::deletePreset,
                 )
             }
                 composable(Routes.SESSION) { backStackEntry ->

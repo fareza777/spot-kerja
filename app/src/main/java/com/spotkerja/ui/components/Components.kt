@@ -3,6 +3,7 @@ package com.spotkerja.ui.components
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -10,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -18,21 +20,29 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.spotkerja.ui.theme.LocalPalette
 import com.spotkerja.ui.theme.LocalScoreColor
 
-/** Bordered card — the base premium surface. */
+/** Bordered card — the base premium surface (subtle top-down gradient). */
 @Composable
 fun GlassCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    val p = LocalPalette.current
     Card(
         modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = LocalPalette.current.card),
-        border = BorderStroke(1.dp, LocalPalette.current.border),
-        shape = RoundedCornerShape(20.dp),
-        content = content,
-    )
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        border = BorderStroke(1.dp, p.border.copy(alpha = 0.85f)),
+        shape = RoundedCornerShape(22.dp),
+    ) {
+        Column(
+            Modifier.background(
+                Brush.verticalGradient(
+                    listOf(p.high.copy(alpha = 0.55f), p.card))),
+            content = content,
+        )
+    }
 }
 
 /** Score ring with gradient sweep, soft glow and fill animation. */
@@ -139,8 +149,15 @@ fun LiveTile(title: String, value: String, sub: String = "", icon: ImageVector? 
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 icon?.let {
-                    Icon(it, null, Modifier.size(13.dp), tint = p.accentDim)
-                    Spacer(Modifier.width(5.dp))
+                    Box(
+                        Modifier.size(20.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(p.accentDim.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(it, null, Modifier.size(13.dp), tint = p.accent)
+                    }
+                    Spacer(Modifier.width(6.dp))
                 }
                 Text(title, style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -275,22 +292,25 @@ fun RadarSweep(progressFrac: Float, modifier: Modifier = Modifier, sizeDp: Int =
     }
 }
 
-/** Polygon/radar chart overlaying per-metric sub-scores for up to 3 spots. */
+/** Polygon/radar chart overlaying per-metric sub-scores for up to 3 spots.
+ *  Axis labels are drawn around the polygon; null scores sit at the centre. */
 @Composable
 fun RadarChart(
     series: List<Pair<String, List<Float?>>>, // label → sub-scores (0-100, null = n/a)
     axisLabels: List<String>,
     modifier: Modifier = Modifier,
-    sizeDp: Int = 220,
+    sizeDp: Int = 250,
 ) {
     val p = LocalPalette.current
     val colors = listOf(p.accent, p.gold, p.accent2)
     val n = axisLabels.size
     if (n < 3 || series.isEmpty()) return
-    Box(modifier.size(sizeDp.dp), contentAlignment = Alignment.Center) {
+    val labelPadDp = 34.dp
+
+    Box(modifier.size(sizeDp.dp)) {
         Canvas(Modifier.fillMaxSize()) {
             val c = center
-            val r = size.minDimension / 2 * 0.78f
+            val r = size.minDimension / 2 - labelPadDp.toPx()
             val pt = { i: Int, f: Float ->
                 val a = -Math.PI / 2 + 2 * Math.PI * i / n
                 Offset(c.x + (r * f * kotlin.math.cos(a)).toFloat(),
@@ -302,22 +322,42 @@ fun RadarChart(
                     repeat(n) { i -> if (i == 0) moveTo(pt(i, f).x, pt(i, f).y) else lineTo(pt(i, f).x, pt(i, f).y) }
                     close()
                 }
-                drawPath(path, p.border, style = Stroke(1.dp.toPx()))
+                drawPath(path, p.border.copy(alpha = 0.8f), style = Stroke(1.dp.toPx()))
             }
-            repeat(n) { i -> drawLine(p.border, c, pt(i, 1f), 1.dp.toPx()) }
-            // series polygons
+            repeat(n) { i -> drawLine(p.border.copy(alpha = 0.7f), c, pt(i, 1f), 1.dp.toPx()) }
+            // axis end dots
+            repeat(n) { i -> drawCircle(p.border, 2.5.dp.toPx(), pt(i, 1f)) }
+            // series polygons — nulls collapse to centre
             series.take(3).forEachIndexed { si, (_, vals) ->
                 val col = colors[si % colors.size]
-                val pts = vals.mapIndexedNotNull { i, v -> v?.let { pt(i, it / 100f) } }
-                if (pts.size >= 3) {
-                    val path = Path().apply {
-                        pts.forEachIndexed { i, o -> if (i == 0) moveTo(o.x, o.y) else lineTo(o.x, o.y) }
-                        close()
-                    }
-                    drawPath(path, col.copy(alpha = 0.16f))
-                    drawPath(path, col, style = Stroke(2.dp.toPx()))
-                    pts.forEach { drawCircle(col, 3.dp.toPx(), it) }
+                val pts = vals.mapIndexed { i, v -> pt(i, (v ?: 0f) / 100f) }
+                val path = Path().apply {
+                    pts.forEachIndexed { i, o -> if (i == 0) moveTo(o.x, o.y) else lineTo(o.x, o.y) }
+                    close()
                 }
+                drawPath(path, col.copy(alpha = 0.14f))
+                drawPath(path, col.copy(alpha = 0.9f), style = Stroke(2.dp.toPx()))
+                vals.forEachIndexed { i, v ->
+                    if (v != null) drawCircle(col, 3.5.dp.toPx(), pts[i])
+                }
+            }
+        }
+        // Axis labels around the polygon
+        axisLabels.forEachIndexed { i, lab ->
+            val a = -Math.PI / 2 + 2 * Math.PI * i / n
+            // Labels sit between polygon edge and box edge.
+            val rDp = sizeDp / 2f - labelPadDp.value * 0.42f
+            val xDp = sizeDp / 2f + (rDp * kotlin.math.cos(a)).toFloat()
+            val yDp = sizeDp / 2f + (rDp * kotlin.math.sin(a)).toFloat()
+            Box(
+                Modifier.offset(x = (xDp - 26).dp, y = (yDp - 8).dp).width(52.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    lab, style = MaterialTheme.typography.labelSmall,
+                    color = p.textDim, fontWeight = FontWeight.Medium,
+                    maxLines = 1, textAlign = TextAlign.Center,
+                )
             }
         }
     }

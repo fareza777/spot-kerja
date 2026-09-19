@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.spotkerja.settings.ScanOptions
+import com.spotkerja.settings.ScanPreset
 import com.spotkerja.settings.ThemeMode
 import com.spotkerja.ui.components.GlassCard
 import com.spotkerja.ui.components.SectionHeader
@@ -45,10 +46,18 @@ fun SettingsScreen(
     onScanOptionsChange: (ScanOptions) -> Unit,
     onFastDurationChange: (Int) -> Unit,
     appVersion: String,
+    presets: List<ScanPreset> = emptyList(),
+    durationSec: Int = 30,
+    spotCount: Int = 3,
+    onSavePreset: (String) -> Unit = {},
+    onApplyPreset: (ScanPreset) -> Unit = {},
+    onDeletePreset: (String) -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val p = LocalPalette.current
     var showAbout by remember { mutableStateOf(false) }
+    var showSavePreset by remember { mutableStateOf(false) }
+    var presetName by remember { mutableStateOf("") }
     var pingHost by remember(scanOptions.pingHost) { mutableStateOf(scanOptions.pingHost) }
 
     LazyColumn(
@@ -214,6 +223,66 @@ fun SettingsScreen(
             }
         }
 
+        // ---------- Scan presets ----------
+        item {
+            SectionHeader("Scan presets")
+            Spacer(Modifier.height(10.dp))
+            GlassCard {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Save your current scan setup — metrics, duration and spot " +
+                        "count — as a named preset you can re-apply in one tap.",
+                        style = MaterialTheme.typography.labelSmall, color = p.textDim)
+                    Spacer(Modifier.height(12.dp))
+                    if (presets.isEmpty()) {
+                        Text("No presets yet.", style = MaterialTheme.typography.bodySmall,
+                            color = p.textDim)
+                    } else {
+                        presets.forEach { preset ->
+                            Row(
+                                Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(preset.name, fontWeight = FontWeight.SemiBold,
+                                        style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        "${preset.durationSec}s • ${preset.spotCount} spots • " +
+                                            listOfNotNull(
+                                                "wifi".takeIf { preset.options.wifi },
+                                                "ping".takeIf { preset.options.ping },
+                                                "light".takeIf { preset.options.light },
+                                                "noise".takeIf { preset.options.noise },
+                                                "facing".takeIf { preset.options.orientation },
+                                                "cell".takeIf { preset.options.cellular },
+                                            ).joinToString("/"),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = p.textDim)
+                                }
+                                TextButton(onClick = { onApplyPreset(preset) }) {
+                                    Text("Apply", color = p.accent)
+                                }
+                                IconButton(onClick = { onDeletePreset(preset.name) }) {
+                                    Icon(Icons.Default.Delete, "Delete preset",
+                                        Modifier.size(18.dp), tint = p.textDim)
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedButton(
+                        onClick = { presetName = ""; showSavePreset = true },
+                        Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, p.accentDim),
+                    ) {
+                        Icon(Icons.Default.BookmarkAdd, null, Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Save current as preset (${durationSec}s · $spotCount spots)")
+                    }
+                }
+            }
+        }
+
         // ---------- General ----------
         item {
             SectionHeader("General")
@@ -263,6 +332,31 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+
+    if (showSavePreset) {
+        AlertDialog(
+            onDismissRequest = { showSavePreset = false },
+            title = { Text("Save preset") },
+            text = {
+                OutlinedTextField(
+                    value = presetName, onValueChange = { presetName = it },
+                    label = { Text("Preset name") },
+                    placeholder = { Text("e.g. Night gaming, Café work") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onSavePreset(presetName.trim().ifEmpty { "Preset" })
+                    showSavePreset = false
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSavePreset = false }) { Text("Cancel") }
+            },
+        )
     }
 
     if (showAbout) {

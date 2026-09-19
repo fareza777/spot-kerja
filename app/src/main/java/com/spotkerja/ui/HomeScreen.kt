@@ -4,8 +4,10 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -24,6 +26,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.spotkerja.data.ScanSession
 import com.spotkerja.data.WorkMode
+import com.spotkerja.settings.ScanPreset
 import com.spotkerja.ui.components.GlassCard
 import com.spotkerja.ui.components.SectionHeader
 import com.spotkerja.ui.theme.*
@@ -53,6 +56,8 @@ fun HomeScreen(
     onFastScan: () -> Unit,
     fastDurationSec: Int,
     onOpenSession: (ScanSession) -> Unit,
+    presets: List<ScanPreset> = emptyList(),
+    onApplyPreset: (ScanPreset) -> Unit = {},
 ) {
     val haptics = LocalHapticFeedback.current
     val p = LocalPalette.current
@@ -100,6 +105,34 @@ fun HomeScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = p.textDim,
                         )
+                    }
+                }
+            }
+        }
+
+        if (presets.isNotEmpty()) {
+            item {
+                SectionHeader("Scan presets")
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    presets.forEach { preset ->
+                        Surface(
+                            onClick = { onApplyPreset(preset) },
+                            shape = RoundedCornerShape(14.dp),
+                            color = p.high,
+                            border = BorderStroke(1.dp, p.border),
+                        ) {
+                            Column(Modifier.padding(horizontal = 14.dp, vertical = 9.dp)) {
+                                Text(preset.name, fontWeight = FontWeight.SemiBold,
+                                    style = MaterialTheme.typography.labelLarge, color = p.text)
+                                Text("${preset.durationSec}s • ${preset.spotCount} spots",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = p.textDim)
+                            }
+                        }
                     }
                 }
             }

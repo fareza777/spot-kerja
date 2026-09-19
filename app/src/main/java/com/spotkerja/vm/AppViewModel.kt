@@ -11,6 +11,7 @@ import com.spotkerja.data.WorkMode
 import com.spotkerja.sense.ScanEngine
 import com.spotkerja.sense.ScanProgress
 import com.spotkerja.settings.ScanOptions
+import com.spotkerja.settings.ScanPreset
 import com.spotkerja.settings.SettingsStore
 import com.spotkerja.settings.ThemeMode
 import com.spotkerja.ui.theme.ThemeOption
@@ -76,6 +77,32 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val onboarded: StateFlow<Boolean> = _onboarded
 
     fun markOnboarded() { _onboarded.value = true; settings.onboarded = true }
+
+    private val _presets = MutableStateFlow(settings.presets())
+    val presets: StateFlow<List<ScanPreset>> = _presets
+
+    /** Simpan konfigurasi scan saat ini sebagai preset bernama. */
+    fun saveCurrentAsPreset(name: String) {
+        settings.savePreset(ScanPreset(
+            name = name,
+            durationSec = _durationSec.value,
+            spotCount = _spotCount.value,
+            options = _scanOptions.value,
+        ))
+        _presets.value = settings.presets()
+    }
+
+    fun deletePreset(name: String) {
+        settings.deletePreset(name)
+        _presets.value = settings.presets()
+    }
+
+    /** Terapkan preset — menimpa opsi scan, durasi, dan jumlah spot. */
+    fun applyPreset(preset: ScanPreset) {
+        setScanOptions(preset.options)
+        setDuration(preset.durationSec)
+        setSpotCount(preset.spotCount)
+    }
 
     val scanProgress: StateFlow<ScanProgress> = engine.progress
 
