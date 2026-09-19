@@ -93,7 +93,7 @@ class ScoreEngineTest {
         val m = SpotMetrics(wifiRssiDbm = -82)
         val (scores, _) = ScoreEngine.scoreSpot(m, WorkMode.WORK)
         val notes = ScoreEngine.notesFor(m, scores)
-        assertTrue(notes.any { "lemah" in it })
+        assertTrue(notes.any { "Weak" in it })
     }
 
     @Test

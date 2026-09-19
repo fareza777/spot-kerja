@@ -124,33 +124,30 @@ object ScoreEngine {
         return if (wsum > 0f) acc / wsum else 0f
     }
 
-    /** Catatan singkat per spot — penjelasan kenapa skor naik/turun. */
+    /** Short per-spot notes explaining what raised/lowered the score. */
     fun notesFor(metrics: SpotMetrics, scores: MetricScores): List<String> {
         val notes = mutableListOf<String>()
         metrics.wifiRssiDbm?.let {
             when {
-                it >= -55 -> notes += "Wi-Fi sangat kuat ($it dBm)"
-                it >= -67 -> notes += "Wi-Fi cukup kuat ($it dBm)"
-                it >= -75 -> notes += "Wi-Fi agak lemah ($it dBm)"
-                else -> notes += "Wi-Fi lemah ($it dBm) — jauh dari router"
+                it >= -55 -> notes += "Excellent Wi-Fi signal ($it dBm)"
+                it >= -67 -> notes += "Good Wi-Fi signal ($it dBm)"
+                it >= -75 -> notes += "Fair Wi-Fi signal ($it dBm)"
+                else -> notes += "Weak Wi-Fi ($it dBm) — far from router"
             }
         }
-        metrics.pingAvgMs?.let { if (it > 40f) notes += "Ping ke router tinggi (≈${it.toInt()} ms)" }
-        metrics.packetLossPct?.let { if (it > 1f) notes += "Ada packet loss (≈${"%.1f".format(it)}%)" }
+        metrics.pingAvgMs?.let { if (it > 40f) notes += "High ping to router (≈${it.toInt()} ms)" }
+        metrics.packetLossPct?.let { if (it > 1f) notes += "Packet loss detected (≈${"%.1f".format(it)}%)" }
         metrics.luxAvg?.let {
             when {
-                it < 80 -> notes += "Sangat gelap (≈${it.toInt()} lux)"
-                it > 1000 -> notes += "Sangat terang (≈${it.toInt()} lux) — risiko silau"
+                it < 80 -> notes += "Too dark (≈${it.toInt()} lux)"
+                it > 1000 -> notes += "Very bright (≈${it.toInt()} lux) — glare risk"
             }
         }
-        metrics.luxStdDev?.let { if (it > 120f) notes += "Cahaya tidak stabil selama scan" }
-        metrics.noiseDbAvg?.let { if (it > 55f) notes += "Cukup bising (≈${it.toInt()} dB est.)" }
-        if (metrics.glareRisk == true) notes += "Menghadap arah matahari — potensi silau layar"
-        if (metrics.wifiRssiDbm == null) notes += "Wi-Fi tidak terhubung/terdeteksi"
-        if (metrics.noiseDbAvg == null) notes += "Noise tidak diukur (izin mikrofon off)"
-        if (scores.cellular == null && metrics.cellularDbm == null) {
-            // diam — metrik opsional
-        }
+        metrics.luxStdDev?.let { if (it > 120f) notes += "Lighting fluctuated during scan" }
+        metrics.noiseDbAvg?.let { if (it > 55f) notes += "Noisy environment (≈${it.toInt()} dB est.)" }
+        if (metrics.glareRisk == true) notes += "Facing the sun — possible screen glare"
+        if (metrics.wifiRssiDbm == null) notes += "Wi-Fi not connected/detected"
+        if (metrics.noiseDbAvg == null) notes += "Noise not measured (mic permission off)"
         return notes
     }
 

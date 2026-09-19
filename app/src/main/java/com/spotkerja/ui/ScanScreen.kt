@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.spotkerja.data.SpotResult
 import com.spotkerja.sense.ScanProgress
@@ -23,7 +24,7 @@ import com.spotkerja.ui.theme.*
 
 @Composable
 fun ScanScreen(
-    spotLabels: List<String>,
+    spotNames: List<String>,
     currentSpotIndex: Int,
     spotsDone: List<SpotResult>,
     progress: ScanProgress,
@@ -34,31 +35,32 @@ fun ScanScreen(
     onCancel: () -> Unit,
 ) {
     val haptics = LocalHapticFeedback.current
-    val currentLabel = spotLabels.getOrNull(currentSpotIndex)
+    val p = LocalPalette.current
+    val sc = LocalScoreColor.current
+    val currentLabel = spotNames.getOrNull(currentSpotIndex)
 
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
-        contentPadding = PaddingValues(vertical = 22.dp),
+        contentPadding = PaddingValues(vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        item { SpotStepper(spotLabels, spotsDone.size, currentSpotIndex) }
+        item { SpotStepper(spotNames.size, spotsDone.size, currentSpotIndex) }
 
         if (progress.running && currentLabel != null) {
             item {
-                Text("Scanning Spot $currentLabel", style = MaterialTheme.typography.headlineSmall)
+                Text("Scanning $currentLabel", style = MaterialTheme.typography.headlineSmall,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    "Letakkan HP di posisi kerja, jangan digerakkan.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary,
+                    "Place the phone at the spot and keep it still.",
+                    style = MaterialTheme.typography.bodySmall, color = p.textDim,
                 )
             }
             item {
                 RadarSweep(progressFrac = progress.elapsedSec.toFloat() / progress.totalSec)
                 Text(
-                    "${progress.totalSec - progress.elapsedSec} detik tersisa",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = TextSecondary,
+                    "${progress.totalSec - progress.elapsedSec}s remaining",
+                    style = MaterialTheme.typography.labelMedium, color = p.textDim,
                 )
             }
             item {
@@ -72,16 +74,16 @@ fun ScanScreen(
                             Icons.Default.Speed, Modifier.weight(1f))
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        LiveTile("Cahaya", l.lux?.let { "≈${it.toInt()}" } ?: "—",
+                        LiveTile("Light", l.lux?.let { "≈${it.toInt()}" } ?: "—",
                             if (!hasLightSensor) "lux • sensor n/a" else "lux",
                             Icons.Default.LightMode, Modifier.weight(1f))
                         LiveTile("Noise", l.noiseDb?.let { "≈${it.toInt()}" } ?: "—", "dB est.",
                             Icons.Default.Mic, Modifier.weight(1f))
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        LiveTile("Hadap", l.azimuthDeg?.let { "${it.toInt()}°" } ?: "—",
+                        LiveTile("Facing", l.azimuthDeg?.let { "${it.toInt()}°" } ?: "—",
                             "azimuth", Icons.Default.Explore, Modifier.weight(1f))
-                        LiveTile("Seluler", l.cellularDbm?.let { "$it" } ?: "—", "dBm",
+                        LiveTile("Cellular", l.cellularDbm?.let { "$it" } ?: "—", "dBm",
                             Icons.Default.SignalCellularAlt, Modifier.weight(1f))
                     }
                 }
@@ -94,13 +96,13 @@ fun ScanScreen(
                     },
                     Modifier.fillMaxWidth().height(52.dp),
                     shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, AccentAmber.copy(alpha = 0.6f)),
+                    border = BorderStroke(1.dp, p.gold.copy(alpha = 0.6f)),
                 ) {
-                    Icon(Icons.Default.Stop, null, tint = AccentAmber)
+                    Icon(Icons.Default.Stop, null, tint = p.gold)
                     Spacer(Modifier.width(8.dp))
-                    Text("Selesaikan lebih awal", color = AccentAmber)
+                    Text("Finish early", color = p.gold)
                 }
-                TextButton(onClick = onCancel) { Text("Batalkan scan", color = TextSecondary) }
+                TextButton(onClick = onCancel) { Text("Cancel scan", color = p.textDim) }
             }
         } else if (currentLabel != null) {
             item {
@@ -110,47 +112,50 @@ fun ScanScreen(
                             Surface(
                                 Modifier.size(42.dp),
                                 shape = RoundedCornerShape(12.dp),
-                                color = scoreColor(last.totalScore).copy(alpha = 0.15f),
+                                color = sc(last.totalScore).copy(alpha = 0.15f),
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(Icons.Default.CheckCircle, null,
-                                        tint = scoreColor(last.totalScore))
+                                        tint = sc(last.totalScore))
                                 }
                             }
                             Spacer(Modifier.width(14.dp))
                             Column(Modifier.weight(1f)) {
-                                Text("Spot ${last.label} selesai", fontWeight = FontWeight.Bold,
-                                    style = MaterialTheme.typography.titleMedium)
-                                Text("Skor sementara ${"%.0f".format(last.totalScore)}/100",
+                                Text("${last.label} done", fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text("Score ${"%.0f".format(last.totalScore)}/100",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = TextSecondary)
+                                    color = p.textDim)
                             }
                             Text("%.0f".format(last.totalScore),
                                 style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = scoreColor(last.totalScore))
+                                color = sc(last.totalScore))
                         }
                     }
                 }
             }
             item {
                 Surface(
-                    Modifier.size(72.dp),
-                    shape = RoundedCornerShape(20.dp),
-                    color = AccentTeal.copy(alpha = 0.12f),
-                    border = BorderStroke(1.dp, AccentTeal.copy(alpha = 0.4f)),
+                    Modifier.size(76.dp),
+                    shape = RoundedCornerShape(22.dp),
+                    color = p.accent.copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, p.accent.copy(alpha = 0.4f)),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Text(currentLabel, style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.ExtraBold, color = AccentTeal)
+                        Text("${currentSpotIndex + 1}",
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.ExtraBold, color = p.accent)
                     }
                 }
-                Spacer(Modifier.height(8.dp))
-                Text("Pindah ke Spot $currentLabel",
-                    style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(10.dp))
+                Text("Move to $currentLabel",
+                    style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    "Posisikan HP di titik kerja berikutnya, lalu mulai scan.",
-                    style = MaterialTheme.typography.bodySmall, color = TextSecondary,
+                    "Place the phone at the next spot, then start scanning.",
+                    style = MaterialTheme.typography.bodySmall, color = p.textDim,
                 )
             }
             item {
@@ -162,17 +167,18 @@ fun ScanScreen(
                     Modifier.fillMaxWidth().height(56.dp),
                     shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = AccentTeal, contentColor = BgDeep),
+                        containerColor = p.accent, contentColor = p.bg),
                 ) {
                     Icon(Icons.Default.PlayArrow, null)
                     Spacer(Modifier.width(8.dp))
-                    Text("Scan Spot $currentLabel", fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleMedium)
+                    Text("Scan $currentLabel", fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Row {
-                    TextButton(onClick = onRescan) { Text("Ulangi spot terakhir", color = TextSecondary) }
+                    TextButton(onClick = onRescan) { Text("Redo last spot", color = p.textDim) }
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = onCancel) { Text("Batalkan", color = TextSecondary) }
+                    TextButton(onClick = onCancel) { Text("Cancel", color = p.textDim) }
                 }
             }
         }
@@ -180,32 +186,32 @@ fun ScanScreen(
 }
 
 @Composable
-private fun SpotStepper(labels: List<String>, doneCount: Int, activeIndex: Int) {
+private fun SpotStepper(count: Int, doneCount: Int, activeIndex: Int) {
+    val p = LocalPalette.current
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        labels.forEachIndexed { i, label ->
+        repeat(count) { i ->
             val done = i < doneCount
             val active = i == activeIndex
             Surface(
                 color = when {
-                    done -> AccentTeal
-                    active -> AccentTeal.copy(alpha = 0.15f)
-                    else -> SurfaceCard
+                    done -> p.accent
+                    active -> p.accent.copy(alpha = 0.15f)
+                    else -> p.card
                 },
                 border = BorderStroke(1.dp, when {
-                    done -> AccentTeal
-                    active -> AccentTeal.copy(alpha = 0.6f)
-                    else -> SurfaceBorder
+                    done -> p.accent
+                    active -> p.accent.copy(alpha = 0.6f)
+                    else -> p.border
                 }),
                 shape = RoundedCornerShape(12.dp),
             ) {
-                Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                Box(Modifier.padding(horizontal = 15.dp, vertical = 8.dp),
                     contentAlignment = Alignment.Center) {
                     if (done) {
-                        Icon(Icons.Default.Check, null, Modifier.size(16.dp),
-                            tint = BgDeep)
+                        Icon(Icons.Default.Check, null, Modifier.size(16.dp), tint = p.bg)
                     } else {
-                        Text(label, fontWeight = FontWeight.Bold,
-                            color = if (active) AccentTeal else TextSecondary)
+                        Text("${i + 1}", fontWeight = FontWeight.Bold,
+                            color = if (active) p.accent else p.textDim)
                     }
                 }
             }

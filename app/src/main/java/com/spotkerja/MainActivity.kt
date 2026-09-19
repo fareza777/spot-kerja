@@ -16,24 +16,37 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.google.android.gms.ads.MobileAds
+import com.spotkerja.ads.Ads
+import com.spotkerja.ads.BannerAd
 import com.spotkerja.data.ScanSession
 import com.spotkerja.data.WorkMode
+import com.spotkerja.export.ExportFormat
 import com.spotkerja.export.Exporter
-import com.spotkerja.sense.ScanProgress
 import com.spotkerja.ui.HistoryScreen
 import com.spotkerja.ui.HomeScreen
 import com.spotkerja.ui.ResultsScreen
 import com.spotkerja.ui.ScanScreen
+import com.spotkerja.ui.SettingsScreen
+import com.spotkerja.ui.theme.LocalPalette
 import com.spotkerja.ui.theme.SpotkerjaTheme
 import com.spotkerja.vm.AppViewModel
 import com.spotkerja.vm.ScanPhase
@@ -43,10 +56,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        MobileAds.initialize(this)
+        Ads.preloadInterstitial(this)
         setContent {
-            SpotkerjaTheme {
+            val vm: AppViewModel = viewModel()
+            val theme by vm.theme.collectAsState()
+            SpotkerjaTheme(theme) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    SpotkerjaApp()
+                    SpotkerjaApp(vm)
                 }
             }
         }
@@ -58,33 +75,52 @@ object Routes {
     const val SCAN = "scan"
     const val RESULTS = "results"
     const val HISTORY = "history"
+    const val SETTINGS = "settings"
     const val SESSION = "session/{id}"
     fun session(id: String) = "session/$id"
 }
 
+private data class Tab(val route: String, val label: String,
+                       val icon: androidx.compose.ui.graphics.vector.ImageVector)
+
+private val TABS = listOf(
+    Tab(Routes.HOME, "Scan", Icons.Default.MyLocation),
+    Tab(Routes.HISTORY, "History", Icons.Default.History),
+    Tab(Routes.SETTINGS, "Settings", Icons.Default.Settings),
+)
+
 @Composable
-fun SpotkerjaApp(vm: AppViewModel = viewModel()) {
+fun SpotkerjaApp(vm: AppViewModel) {
     val nav: NavHostController = rememberNavController()
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
+    val p = LocalPalette.current
 
     val mode by vm.mode.collectAsState()
     val duration by vm.durationSec.collectAsState()
     val phase by vm.phase.collectAsState()
-    val spotLabels by vm.spotLabels.collectAsState()
+    val spotCount by vm.spotCount.collectAsState()
+    val spotNames by vm.spotNames.collectAsState()
     val currentSpot by vm.currentSpotIndex.collectAsState()
     val spots by vm.spots.collectAsState()
     val history by vm.history.collectAsState()
     val progress by vm.scanProgress.collectAsState()
+    val adsEnabled by vm.adsEnabled.collectAsState()
+    var exporting by remember { mutableStateOf(false) }
 
-    // Pindah ke layar hasil saat fase RESULTS
+    val backStack by nav.currentBackStackEntryAsState()
+    val route = backStack?.destination?.route
+    val showBottomBar = route in TABS.map { it.route }
+
     LaunchedEffect(phase) {
-        if (phase == ScanPhase.RESULTS && nav.currentDestination?.route == Routes.SCAN) {
+        if (phase == ScanPhase.RESULTS && route == Routes.SCAN) {
             nav.navigate(Routes.RESULTS) { popUpTo(Routes.HOME) }
+            if (adsEnabled) {
+                (ctx as? MainActivity)?.let { Ads.maybeShowInterstitial(it) }
+            }
         }
     }
 
-    // Keep screen on saat scanning
     val activity = ctx as? MainActivity
     LaunchedEffect(progress.running) {
         if (progress.running) activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -93,97 +129,151 @@ fun SpotkerjaApp(vm: AppViewModel = viewModel()) {
 
     val permLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { /* lanjut apapun hasilnya — metrik yang tak tersedia ditandai */ }
+    ) { }
 
-    fun requestPermsAnd(action: () -> Unit) {
-        permLauncher.launch(arrayOf(
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.RECORD_AUDIO,
-        ))
-        action()
+    fun export(format: ExportFormat) {
+        val s = vm.currentSession ?: return
+        exporting = true
+        scope.launch {
+            runCatching { Exporter.export(ctx, s, format) }
+            exporting = false
+        }
     }
 
-    NavHost(
-        nav, startDestination = Routes.HOME,
-        enterTransition = { slideInHorizontally { it / 3 } + fadeIn() },
-        exitTransition = { fadeOut() },
-        popEnterTransition = { fadeIn() },
-        popExitTransition = { slideOutHorizontally { it / 3 } + fadeOut() },
-    ) {
-        composable(Routes.HOME) {
-            HomeScreen(
-                mode = mode,
-                durationSec = duration,
-                spotLabels = spotLabels,
-                history = history,
-                onModeChange = vm::setMode,
-                onDurationChange = vm::setDuration,
-                onAddSpot = vm::addSpotLabel,
-                onRemoveSpot = vm::removeSpotLabel,
-                onStartScan = {
-                    requestPermsAnd {
+    Scaffold(
+        bottomBar = {
+            if (showBottomBar) {
+                NavigationBar(
+                    containerColor = p.card,
+                    tonalElevation = 0.dp,
+                ) {
+                    TABS.forEach { tab ->
+                        NavigationBarItem(
+                            selected = route == tab.route,
+                            onClick = {
+                                if (route != tab.route) {
+                                    nav.navigate(tab.route) {
+                                        popUpTo(Routes.HOME) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                }
+                            },
+                            icon = { Icon(tab.icon, tab.label) },
+                            label = { Text(tab.label) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = p.bg,
+                                selectedTextColor = p.accent,
+                                indicatorColor = p.accent,
+                                unselectedIconColor = p.textDim,
+                                unselectedTextColor = p.textDim,
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+    ) { padding ->
+        NavHost(
+            nav, startDestination = Routes.HOME,
+            modifier = Modifier.padding(padding),
+            enterTransition = { slideInHorizontally { it / 3 } + fadeIn() },
+            exitTransition = { fadeOut() },
+            popEnterTransition = { fadeIn() },
+            popExitTransition = { slideOutHorizontally { it / 3 } + fadeOut() },
+        ) {
+            composable(Routes.HOME) {
+                HomeScreen(
+                    mode = mode,
+                    durationSec = duration,
+                    spotCount = spotCount,
+                    spotNames = spotNames,
+                    history = history,
+                    onModeChange = vm::setMode,
+                    onDurationChange = vm::setDuration,
+                    onSpotCountChange = vm::setSpotCount,
+                    onSpotNameChange = vm::setSpotName,
+                    onStartScan = {
+                        permLauncher.launch(arrayOf(
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION,
+                            Manifest.permission.RECORD_AUDIO,
+                        ))
                         vm.startScan()
                         nav.navigate(Routes.SCAN)
-                    }
-                },
-                onOpenHistory = { nav.navigate(Routes.HISTORY) },
-                onOpenSession = { s -> nav.navigate(Routes.session(s.id)) },
-            )
-        }
-        composable(Routes.SCAN) {
-            val sm = remember { ctx.getSystemService(Context.SENSOR_SERVICE) as SensorManager }
-            ScanScreen(
-                spotLabels = spotLabels,
-                currentSpotIndex = currentSpot,
-                spotsDone = spots,
-                progress = progress,
-                hasLightSensor = sm.getDefaultSensor(Sensor.TYPE_LIGHT) != null,
-                onStopEarly = vm::stopCurrentSpotEarly,
-                onScanNext = vm::scanNextSpot,
-                onRescan = vm::rescanCurrentSpot,
-                onCancel = {
-                    vm.reset()
-                    nav.popBackStack(Routes.HOME, inclusive = false)
-                },
-            )
-        }
-        composable(Routes.RESULTS) {
-            ResultsScreen(
-                spots = spots,
-                mode = mode,
-                onShare = {
-                    vm.currentSession?.let { s -> scope.launch { Exporter.share(ctx, s) } }
-                },
-                onNewScan = {
-                    vm.reset()
-                    nav.popBackStack(Routes.HOME, inclusive = false)
-                },
-            )
-        }
-        composable(Routes.HISTORY) {
-            HistoryScreen(
-                sessions = history,
-                onOpen = { s -> nav.navigate(Routes.session(s.id)) },
-                onDelete = vm::deleteSession,
-                onBack = { nav.popBackStack() },
-            )
-        }
-        composable(Routes.SESSION) { backStack ->
-            val id = backStack.arguments?.getString("id")
-            var session by remember { mutableStateOf<ScanSession?>(null) }
-            LaunchedEffect(id) { id?.let { vm.sessionById(it) { s -> session = s } } }
-            session?.let { s ->
+                    },
+                    onOpenSession = { s -> nav.navigate(Routes.session(s.id)) },
+                )
+            }
+            composable(Routes.SCAN) {
+                val sm = remember { ctx.getSystemService(Context.SENSOR_SERVICE) as SensorManager }
+                ScanScreen(
+                    spotNames = spotNames,
+                    currentSpotIndex = currentSpot,
+                    spotsDone = spots,
+                    progress = progress,
+                    hasLightSensor = sm.getDefaultSensor(Sensor.TYPE_LIGHT) != null,
+                    onStopEarly = vm::stopCurrentSpotEarly,
+                    onScanNext = vm::scanNextSpot,
+                    onRescan = vm::rescanCurrentSpot,
+                    onCancel = {
+                        vm.reset()
+                        nav.popBackStack(Routes.HOME, inclusive = false)
+                    },
+                )
+            }
+            composable(Routes.RESULTS) {
                 ResultsScreen(
-                    spots = s.spots,
-                    mode = WorkMode.entries.firstOrNull { it.label == s.mode } ?: WorkMode.WORK,
-                    onShare = { scope.launch { Exporter.share(ctx, s) } },
+                    spots = spots,
+                    mode = mode,
+                    onExport = ::export,
                     onNewScan = {
                         vm.reset()
                         nav.popBackStack(Routes.HOME, inclusive = false)
                     },
-                    onBack = { nav.popBackStack() },
+                    exporting = exporting,
+                    bannerAd = if (adsEnabled) ({
+                        BannerAd(Modifier
+                            .fillMaxWidth()
+                            .wrapContentHeight())
+                    }) else null,
                 )
+            }
+            composable(Routes.HISTORY) {
+                HistoryScreen(
+                    sessions = history,
+                    onOpen = { s -> nav.navigate(Routes.session(s.id)) },
+                    onDelete = vm::deleteSession,
+                )
+            }
+            composable(Routes.SETTINGS) {
+                val theme by vm.theme.collectAsState()
+                SettingsScreen(
+                    theme = theme,
+                    adsEnabled = adsEnabled,
+                    onThemeChange = vm::setTheme,
+                    onAdsChange = vm::setAdsEnabled,
+                    appVersion = "1.0.0",
+                )
+            }
+            composable(Routes.SESSION) { backStackEntry ->
+                val id = backStackEntry.arguments?.getString("id")
+                var session by remember { mutableStateOf<ScanSession?>(null) }
+                LaunchedEffect(id) { id?.let { vm.sessionById(it) { s -> session = s } } }
+                session?.let { s ->
+                    ResultsScreen(
+                        spots = s.spots,
+                        mode = WorkMode.entries.firstOrNull { it.label == s.mode } ?: WorkMode.WORK,
+                        onExport = { f ->
+                            scope.launch { Exporter.export(ctx, s, f) }
+                        },
+                        onNewScan = {
+                            vm.reset()
+                            nav.popBackStack(Routes.HOME, inclusive = false)
+                        },
+                        onBack = { nav.popBackStack() },
+                    )
+                }
             }
         }
     }

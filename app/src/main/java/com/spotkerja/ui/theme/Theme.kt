@@ -1,55 +1,82 @@
 package com.spotkerja.ui.theme
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
-import androidx.compose.material3.Typography
 
-// Palet dark premium — deep green-charcoal + aksen teal→cyan & amber
-val BgDeep = Color(0xFF070D0B)
-val BgElevated = Color(0xFF0B1210)
-val SurfaceCard = Color(0xFF101A16)
-val SurfaceHigh = Color(0xFF182521)
-val SurfaceBorder = Color(0xFF223330)
-val AccentTeal = Color(0xFF4ED8C3)
-val AccentCyan = Color(0xFF5CC8FF)
-val AccentTealDim = Color(0xFF2FA08F)
-val AccentAmber = Color(0xFFF2B84B)
-val TextPrimary = Color(0xFFEFF7F3)
-val TextSecondary = Color(0xFF93A8A0)
-val ScoreGood = Color(0xFF4ED8C3)
-val ScoreMid = Color(0xFFF2B84B)
-val ScoreBad = Color(0xFFE5655F)
-
-val ScoreGradient = Brush.sweepGradient(listOf(AccentTeal, AccentCyan, AccentTeal))
-val HeroGradient = Brush.linearGradient(listOf(Color(0xFF123B33), Color(0xFF0D2A33)))
-val TrackColor = Color(0xFF1B2A25)
-
-private val Scheme = darkColorScheme(
-    primary = AccentTeal,
-    onPrimary = Color(0xFF04211C),
-    primaryContainer = Color(0xFF155047),
-    onPrimaryContainer = Color(0xFFBCF4E9),
-    secondary = AccentAmber,
-    onSecondary = Color(0xFF2E1F00),
-    secondaryContainer = Color(0xFF4D3A0F),
-    onSecondaryContainer = Color(0xFFFCE7B5),
-    tertiary = AccentCyan,
-    background = BgDeep,
-    onBackground = TextPrimary,
-    surface = BgDeep,
-    onSurface = TextPrimary,
-    surfaceVariant = SurfaceCard,
-    onSurfaceVariant = TextSecondary,
-    surfaceContainerHigh = SurfaceHigh,
-    outline = SurfaceBorder,
-    error = ScoreBad,
+data class Palette(
+    val bg: Color,
+    val card: Color,
+    val high: Color,
+    val border: Color,
+    val accent: Color,
+    val accent2: Color,
+    val accentDim: Color,
+    val gold: Color,
+    val text: Color,
+    val textDim: Color,
+    val good: Color,
+    val mid: Color,
+    val bad: Color,
 )
+
+enum class ThemeOption(val label: String, val swatch: List<Color>) {
+    EMERALD("Emerald", listOf(Color(0xFF070D0B), Color(0xFF4ED8C3), Color(0xFF5CC8FF))),
+    OCEAN("Ocean", listOf(Color(0xFF070B12), Color(0xFF5C9DFF), Color(0xFF4ED8C3))),
+    SUNSET("Sunset", listOf(Color(0xFF140B09), Color(0xFFFF8A5C), Color(0xFFF2B84B))),
+    VIOLET("Violet", listOf(Color(0xFF0C0A14), Color(0xFFB48CFF), Color(0xFF5CC8FF))),
+    MONO("Mono", listOf(Color(0xFF0B0B0B), Color(0xFFE8E8E8), Color(0xFF9A9A9A))),
+}
+
+fun paletteFor(t: ThemeOption): Palette = when (t) {
+    ThemeOption.EMERALD -> Palette(
+        bg = Color(0xFF070D0B), card = Color(0xFF101A16), high = Color(0xFF182521),
+        border = Color(0xFF223330), accent = Color(0xFF4ED8C3), accent2 = Color(0xFF5CC8FF),
+        accentDim = Color(0xFF2FA08F), gold = Color(0xFFF2B84B),
+        text = Color(0xFFEFF7F3), textDim = Color(0xFF93A8A0),
+        good = Color(0xFF4ED8C3), mid = Color(0xFFF2B84B), bad = Color(0xFFE5655F),
+    )
+    ThemeOption.OCEAN -> Palette(
+        bg = Color(0xFF070B12), card = Color(0xFF0F1722), high = Color(0xFF182234),
+        border = Color(0xFF24334A), accent = Color(0xFF5C9DFF), accent2 = Color(0xFF4ED8C3),
+        accentDim = Color(0xFF3A6FBF), gold = Color(0xFFF2B84B),
+        text = Color(0xFFEFF4FB), textDim = Color(0xFF93A4BC),
+        good = Color(0xFF4ED8C3), mid = Color(0xFFF2B84B), bad = Color(0xFFE5655F),
+    )
+    ThemeOption.SUNSET -> Palette(
+        bg = Color(0xFF140B09), card = Color(0xFF1E1310), high = Color(0xFF2A1C16),
+        border = Color(0xFF3D2A20), accent = Color(0xFFFF8A5C), accent2 = Color(0xFFF2B84B),
+        accentDim = Color(0xFFC06035), gold = Color(0xFFFFC86B),
+        text = Color(0xFFFBF3EE), textDim = Color(0xFFB59E92),
+        good = Color(0xFFFF8A5C), mid = Color(0xFFF2B84B), bad = Color(0xFFE5655F),
+    )
+    ThemeOption.VIOLET -> Palette(
+        bg = Color(0xFF0C0A14), card = Color(0xFF161226), high = Color(0xFF201A36),
+        border = Color(0xFF32294E), accent = Color(0xFFB48CFF), accent2 = Color(0xFF5CC8FF),
+        accentDim = Color(0xFF7A5CBC), gold = Color(0xFFF2B84B),
+        text = Color(0xFFF4F0FB), textDim = Color(0xFFA398BC),
+        good = Color(0xFFB48CFF), mid = Color(0xFFF2B84B), bad = Color(0xFFE5655F),
+    )
+    ThemeOption.MONO -> Palette(
+        bg = Color(0xFF0B0B0B), card = Color(0xFF141414), high = Color(0xFF1F1F1F),
+        border = Color(0xFF2E2E2E), accent = Color(0xFFE8E8E8), accent2 = Color(0xFF9A9A9A),
+        accentDim = Color(0xFF6E6E6E), gold = Color(0xFFD8D8D8),
+        text = Color(0xFFF2F2F2), textDim = Color(0xFF9A9A9A),
+        good = Color(0xFFE8E8E8), mid = Color(0xFF9A9A9A), bad = Color(0xFF565656),
+    )
+}
+
+val LocalPalette = compositionLocalOf { paletteFor(ThemeOption.EMERALD) }
+
+val LocalScoreColor = compositionLocalOf<(Float) -> Color> {
+    { paletteFor(ThemeOption.EMERALD).accent }
+}
 
 private val Type = Typography(
     headlineMedium = TextStyle(fontWeight = FontWeight.ExtraBold, fontSize = 30.sp, letterSpacing = (-0.5).sp),
@@ -65,12 +92,47 @@ private val Type = Typography(
 )
 
 @Composable
-fun SpotkerjaTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = Scheme, typography = Type, content = content)
+fun SpotkerjaTheme(option: ThemeOption = ThemeOption.EMERALD, content: @Composable () -> Unit) {
+    val p = paletteFor(option)
+    val scheme = darkColorScheme(
+        primary = p.accent,
+        onPrimary = p.bg,
+        primaryContainer = p.accentDim.copy(alpha = 0.4f),
+        onPrimaryContainer = p.text,
+        secondary = p.gold,
+        onSecondary = p.bg,
+        secondaryContainer = p.gold.copy(alpha = 0.2f),
+        onSecondaryContainer = p.text,
+        tertiary = p.accent2,
+        background = p.bg,
+        onBackground = p.text,
+        surface = p.bg,
+        onSurface = p.text,
+        surfaceVariant = p.card,
+        onSurfaceVariant = p.textDim,
+        outline = p.border,
+        error = p.bad,
+    )
+    CompositionLocalProvider(
+        LocalPalette provides p,
+        LocalScoreColor provides { s: Float -> scoreColor(s, p) },
+    ) {
+        MaterialTheme(colorScheme = scheme, typography = Type, content = content)
+    }
 }
 
-fun scoreColor(score: Float): Color = when {
-    score >= 70f -> ScoreGood
-    score >= 45f -> ScoreMid
-    else -> ScoreBad
+fun scoreColor(score: Float, p: Palette): Color = when {
+    score >= 70f -> p.good
+    score >= 45f -> p.mid
+    else -> p.bad
+}
+
+@Composable
+fun heroBrush(): Brush = with(LocalPalette.current) {
+    Brush.linearGradient(listOf(accent.copy(alpha = 0.28f), accent2.copy(alpha = 0.18f), card))
+}
+
+@Composable
+fun accentBrush(): Brush = with(LocalPalette.current) {
+    Brush.sweepGradient(listOf(accent, accent2, accent))
 }

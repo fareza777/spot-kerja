@@ -2,12 +2,12 @@ package com.spotkerja.data
 
 import kotlinx.serialization.Serializable
 
-/** Mode penilaian — tiap mode punya bobot dan rentang cahaya ideal berbeda. */
+/** Evaluation mode — each mode has its own metric weights and ideal light band. */
 enum class WorkMode(val label: String, val description: String) {
-    WORK("Work", "Kerja produktif: koneksi stabil, cahaya cukup, suasana tenang"),
-    STUDY("Study", "Belajar fokus: cahaya dan keheningan paling penting"),
-    GAMING("Gaming", "Gaming: latency, jitter, dan packet loss paling kritikal"),
-    VIDEO_CALL("Video Call", "Video call: koneksi realtime, cahaya wajah, minim noise"),
+    WORK("Work", "Productive work: stable connection, good light, quiet room"),
+    STUDY("Study", "Deep focus: lighting and quietness matter most"),
+    GAMING("Gaming", "Latency, jitter and packet loss are critical"),
+    VIDEO_CALL("Video Call", "Realtime connection, face lighting, low noise"),
 }
 
 /** Bobot tiap metrik per mode. Total tidak harus 1 — selalu dinormalisasi. */

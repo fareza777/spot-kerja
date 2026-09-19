@@ -10,31 +10,40 @@ import com.spotkerja.data.SpotResult
 import com.spotkerja.data.WorkMode
 import com.spotkerja.sense.ScanEngine
 import com.spotkerja.sense.ScanProgress
+import com.spotkerja.settings.SettingsStore
+import com.spotkerja.ui.theme.ThemeOption
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.util.UUID
 
-/** Fase flow scan: memilih mode → scan tiap spot → hasil. */
 enum class ScanPhase { SETUP, SCANNING, RESULTS }
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val store = SessionStore(app)
+    private val settings = SettingsStore(app)
     val engine = ScanEngine(app)
+
+    private val _theme = MutableStateFlow(settings.theme)
+    val theme: StateFlow<ThemeOption> = _theme
 
     private val _mode = MutableStateFlow(WorkMode.WORK)
     val mode: StateFlow<WorkMode> = _mode
 
-    private val _durationSec = MutableStateFlow(30)
+    private val _durationSec = MutableStateFlow(settings.durationSec)
     val durationSec: StateFlow<Int> = _durationSec
 
     private val _phase = MutableStateFlow(ScanPhase.SETUP)
     val phase: StateFlow<ScanPhase> = _phase
 
-    /** Label spot berikutnya: A, B, C, ... */
-    private val _spotLabels = MutableStateFlow(listOf("A", "B", "C"))
-    val spotLabels: StateFlow<List<String>> = _spotLabels
+    private val _spotCount = MutableStateFlow(settings.spotCount)
+    val spotCount: StateFlow<Int> = _spotCount
+
+    /** Nama spot per index — custom atau default "Spot X". */
+    private val _spotNames = MutableStateFlow(
+        (0 until settings.spotCount).map { settings.spotName(it) })
+    val spotNames: StateFlow<List<String>> = _spotNames
 
     private val _currentSpotIndex = MutableStateFlow(0)
     val currentSpotIndex: StateFlow<Int> = _currentSpotIndex
@@ -45,42 +54,49 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _history = MutableStateFlow<List<ScanSession>>(emptyList())
     val history: StateFlow<List<ScanSession>> = _history
 
-    private val _sessionSaved = MutableStateFlow(false)
-    val sessionSaved: StateFlow<Boolean> = _sessionSaved
+    private val _adsEnabled = MutableStateFlow(settings.adsEnabled)
+    val adsEnabled: StateFlow<Boolean> = _adsEnabled
 
     val scanProgress: StateFlow<ScanProgress> = engine.progress
 
     init { refreshHistory() }
 
+    fun setTheme(t: ThemeOption) { _theme.value = t; settings.theme = t }
     fun setMode(m: WorkMode) { _mode.value = m }
-    fun setDuration(sec: Int) { _durationSec.value = sec.coerceIn(30, 60) }
+    fun setDuration(sec: Int) {
+        _durationSec.value = sec.coerceIn(15, 60)
+        settings.durationSec = _durationSec.value
+    }
+    fun setAdsEnabled(v: Boolean) { _adsEnabled.value = v; settings.adsEnabled = v }
 
-    fun addSpotLabel() {
-        val next = ('A' + _spotLabels.value.size)
-        if (next <= 'F') _spotLabels.value = _spotLabels.value + next.toString()
+    fun setSpotCount(n: Int) {
+        val c = n.coerceIn(2, 8)
+        _spotCount.value = c
+        settings.spotCount = c
+        _spotNames.value = (0 until c).map { settings.spotName(it) }
     }
 
-    fun removeSpotLabel(i: Int) {
-        if (_spotLabels.value.size > 2) _spotLabels.value = _spotLabels.value.toMutableList().also { it.removeAt(i) }
+    fun setSpotName(index: Int, name: String) {
+        settings.setSpotName(index, name)
+        _spotNames.value = (0 until _spotCount.value).map { settings.spotName(it) }
     }
 
     fun startScan() {
         _spots.value = emptyList()
         _currentSpotIndex.value = 0
-        _sessionSaved.value = false
         _phase.value = ScanPhase.SCANNING
         startCurrentSpot()
     }
 
     private fun startCurrentSpot() {
-        val label = _spotLabels.value.getOrNull(_currentSpotIndex.value) ?: return
+        val label = _spotNames.value.getOrNull(_currentSpotIndex.value) ?: return
         engine.start(viewModelScope, label, _durationSec.value, _mode.value) { result ->
             onSpotDone(result)
         }
     }
 
     fun stopCurrentSpotEarly() {
-        val label = _spotLabels.value.getOrNull(_currentSpotIndex.value) ?: return
+        val label = _spotNames.value.getOrNull(_currentSpotIndex.value) ?: return
         engine.stop(label, _durationSec.value, _mode.value) { result -> onSpotDone(result) }
     }
 
@@ -88,10 +104,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _spots.value = _spots.value + result
         val next = _currentSpotIndex.value + 1
         _currentSpotIndex.value = next
-        if (next >= _spotLabels.value.size) {
-            finishSession()
-        }
-        // kalau belum selesai, user menekan "Scan Spot X" di layar scan
+        if (next >= _spotNames.value.size) finishSession()
     }
 
     fun scanNextSpot() = startCurrentSpot()
@@ -116,7 +129,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         )
         viewModelScope.launch {
             store.save(session)
-            _sessionSaved.value = true
             refreshHistory()
         }
         currentSession = session
@@ -126,10 +138,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     fun sessionById(id: String, onLoaded: (ScanSession?) -> Unit) {
-        viewModelScope.launch {
-            onLoaded(_history.value.firstOrNull { it.id == id })
-        }
+        viewModelScope.launch { onLoaded(_history.value.firstOrNull { it.id == id }) }
     }
+
+    fun sessionsOnDay(dayStartMs: Long, dayEndMs: Long): List<ScanSession> =
+        _history.value.filter { it.createdAtEpochMs in dayStartMs until dayEndMs }
 
     fun reset() {
         engine.cancel()
