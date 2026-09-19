@@ -44,7 +44,7 @@ fun SettingsScreen(
     onAdsChange: (Boolean) -> Unit,
     onScanOptionsChange: (ScanOptions) -> Unit,
     onFastDurationChange: (Int) -> Unit,
-    appVersion: String = "2.0.0",
+    appVersion: String,
 ) {
     val ctx = LocalContext.current
     val p = LocalPalette.current

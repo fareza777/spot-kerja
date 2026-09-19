@@ -356,7 +356,7 @@ fun SpotkerjaApp(vm: AppViewModel, widgetFastScan: MutableState<Boolean>) {
                     onAdsChange = vm::setAdsEnabled,
                     onScanOptionsChange = vm::setScanOptions,
                     onFastDurationChange = vm::setFastDuration,
-                    appVersion = "2.0.0",
+                    appVersion = BuildConfig.VERSION_NAME,
                 )
             }
                 composable(Routes.SESSION) { backStackEntry ->
