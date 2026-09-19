@@ -105,8 +105,10 @@ class WifiSampler(private val ctx: Context) {
     }
 }
 
-/** Ping ke gateway Wi-Fi (jaringan lokal — tetap bekerja tanpa internet). */
-class PingSampler(private val ctx: Context) {
+/** Ping ke host terkonfigurasi (default: gateway Wi-Fi — tetap bekerja tanpa internet). */
+class PingSampler(private val ctx: Context, private val host: String? = null) {
+
+    private fun target(): String? = host?.takeIf { it.isNotBlank() } ?: gatewayIp()
 
     fun gatewayIp(): String? {
         val wifi = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
@@ -118,10 +120,10 @@ class PingSampler(private val ctx: Context) {
 
     /** Satu ping via binary /system/bin/ping; return RTT ms atau null (loss). */
     suspend fun pingOnce(acc: ScanAccumulator): Float? = withContext(Dispatchers.IO) {
-        val gw = gatewayIp()
-        if (gw == null) { acc.addPing(null); return@withContext null }
+        val t = target()
+        if (t == null) { acc.addPing(null); return@withContext null }
         val rtt = runCatching {
-            val p = ProcessBuilder("/system/bin/ping", "-c", "1", "-W", "2", gw)
+            val p = ProcessBuilder("/system/bin/ping", "-c", "1", "-W", "2", t)
                 .redirectErrorStream(true).start()
             val out = BufferedReader(InputStreamReader(p.inputStream)).readText()
             p.waitFor()
@@ -132,17 +134,25 @@ class PingSampler(private val ctx: Context) {
     }
 }
 
-/** Listener sensor cahaya + rotasi (azimuth) selama scan. */
-class AmbientSampler(ctx: Context, private val acc: ScanAccumulator) : SensorEventListener {
+/** Listener sensor cahaya + rotasi (azimuth) selama scan — tiap sumber bisa dimatikan. */
+class AmbientSampler(
+    ctx: Context,
+    private val acc: ScanAccumulator,
+    private val wantLight: Boolean = true,
+    private val wantRotation: Boolean = true,
+) : SensorEventListener {
     private val sm = ctx.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-    private val light = sm.getDefaultSensor(Sensor.TYPE_LIGHT)
-    private val rotation = sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
-        ?: sm.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
+    private val light = if (wantLight) sm.getDefaultSensor(Sensor.TYPE_LIGHT) else null
+    private val rotation = if (wantRotation)
+        sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+            ?: sm.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
+    else null
 
     private val rotMat = FloatArray(9)
     private val orient = FloatArray(3)
 
     fun hasLightSensor() = light != null
+    fun hasAny() = light != null || rotation != null
 
     fun start() {
         light?.let { sm.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }

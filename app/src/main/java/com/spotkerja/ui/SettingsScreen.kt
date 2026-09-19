@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -18,9 +19,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.spotkerja.settings.ScanOptions
+import com.spotkerja.settings.ThemeMode
 import com.spotkerja.ui.components.GlassCard
 import com.spotkerja.ui.components.SectionHeader
 import com.spotkerja.ui.theme.LocalPalette
@@ -30,14 +35,21 @@ import com.spotkerja.ui.theme.paletteFor
 @Composable
 fun SettingsScreen(
     theme: ThemeOption,
+    themeMode: ThemeMode,
     adsEnabled: Boolean,
+    scanOptions: ScanOptions,
+    fastDurationSec: Int,
     onThemeChange: (ThemeOption) -> Unit,
+    onThemeModeChange: (ThemeMode) -> Unit,
     onAdsChange: (Boolean) -> Unit,
-    appVersion: String = "1.0.0",
+    onScanOptionsChange: (ScanOptions) -> Unit,
+    onFastDurationChange: (Int) -> Unit,
+    appVersion: String = "2.0.0",
 ) {
     val ctx = LocalContext.current
     val p = LocalPalette.current
     var showAbout by remember { mutableStateOf(false) }
+    var pingHost by remember(scanOptions.pingHost) { mutableStateOf(scanOptions.pingHost) }
 
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 20.dp),
@@ -49,8 +61,43 @@ fun SettingsScreen(
                 fontWeight = FontWeight.Bold)
         }
 
+        // ---------- Appearance ----------
         item {
-            SectionHeader("Theme")
+            SectionHeader("Appearance")
+            Spacer(Modifier.height(10.dp))
+            // Light / Dark / System segmented
+            Row(
+                Modifier.fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(p.card)
+                    .border(1.dp, p.border, RoundedCornerShape(14.dp))
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                listOf(
+                    ThemeMode.LIGHT to Icons.Default.LightMode,
+                    ThemeMode.DARK to Icons.Default.DarkMode,
+                    ThemeMode.SYSTEM to Icons.Default.SettingsBrightness,
+                ).forEach { (m, icon) ->
+                    val sel = m == themeMode
+                    Row(
+                        Modifier.weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (sel) p.accent else p.card)
+                            .clickable { onThemeModeChange(m) }
+                            .padding(vertical = 10.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(icon, null, Modifier.size(15.dp),
+                            tint = if (sel) p.bg else p.textDim)
+                        Spacer(Modifier.width(6.dp))
+                        Text(m.name.lowercase().replaceFirstChar { it.uppercase() },
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (sel) p.bg else p.textDim)
+                    }
+                }
+            }
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 ThemeOption.entries.forEach { t ->
@@ -83,6 +130,91 @@ fun SettingsScreen(
             }
         }
 
+        // ---------- Scan customization ----------
+        item {
+            SectionHeader("Scan customization")
+            Spacer(Modifier.height(10.dp))
+            GlassCard {
+                MetricToggle(Icons.Default.Wifi, "Wi-Fi signal (RSSI)",
+                    "Signal strength & link speed", scanOptions.wifi) {
+                    onScanOptionsChange(scanOptions.copy(wifi = it))
+                }
+                OptDivider()
+                MetricToggle(Icons.Default.NetworkPing, "Ping & latency",
+                    "Ping, jitter & packet loss", scanOptions.ping) {
+                    onScanOptionsChange(scanOptions.copy(ping = it))
+                }
+                OptDivider()
+                MetricToggle(Icons.Default.WbSunny, "Ambient light",
+                    "Lux level & stability", scanOptions.light) {
+                    onScanOptionsChange(scanOptions.copy(light = it))
+                }
+                OptDivider()
+                MetricToggle(Icons.Default.Mic, "Noise level",
+                    "Ambient loudness via mic", scanOptions.noise) {
+                    onScanOptionsChange(scanOptions.copy(noise = it))
+                }
+                OptDivider()
+                MetricToggle(Icons.Default.Explore, "Facing direction",
+                    "Orientation vs sun position", scanOptions.orientation) {
+                    onScanOptionsChange(scanOptions.copy(orientation = it))
+                }
+                OptDivider()
+                MetricToggle(Icons.Default.CellTower, "Cellular signal",
+                    "Backup signal estimate", scanOptions.cellular) {
+                    onScanOptionsChange(scanOptions.copy(cellular = it))
+                }
+            }
+        }
+
+        item {
+            GlassCard {
+                Column(Modifier.padding(18.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Bolt, null, Modifier.size(16.dp), tint = p.accentDim)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Fast scan duration", style = MaterialTheme.typography.titleSmall)
+                        Spacer(Modifier.weight(1f))
+                        Text("${fastDurationSec}s", style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold, color = p.accent)
+                    }
+                    Slider(
+                        value = fastDurationSec.toFloat(),
+                        onValueChange = { onFastDurationChange(it.toInt()) },
+                        valueRange = 10f..30f,
+                        steps = 3,
+                        colors = SliderDefaults.colors(
+                            thumbColor = p.accent,
+                            activeTrackColor = p.accent,
+                            inactiveTrackColor = p.border,
+                        ),
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("10s", style = MaterialTheme.typography.labelSmall, color = p.textDim)
+                        Text("30s", style = MaterialTheme.typography.labelSmall, color = p.textDim)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = pingHost,
+                        onValueChange = { pingHost = it },
+                        label = { Text("Ping target (optional)") },
+                        placeholder = { Text("Wi-Fi gateway (default)") },
+                        singleLine = true,
+                        enabled = scanOptions.ping,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (pingHost != scanOptions.pingHost) {
+                        Spacer(Modifier.height(8.dp))
+                        TextButton(onClick = {
+                            onScanOptionsChange(scanOptions.copy(pingHost = pingHost))
+                        }) { Text("Apply ping target") }
+                    }
+                }
+            }
+        }
+
+        // ---------- General ----------
         item {
             SectionHeader("General")
             Spacer(Modifier.height(10.dp))
@@ -97,16 +229,17 @@ fun SettingsScreen(
             }
         }
 
+        // ---------- About ----------
         item {
             SectionHeader("About")
             Spacer(Modifier.height(10.dp))
             GlassCard {
-                SettingsRow(Icons.Default.Share, "Share app", "Tell a friend about Spotkerja") {
+                SettingsRow(Icons.Default.Share, "Share app", "Tell a friend about SpotWise") {
                     TextButton(onClick = {
                         val i = Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"
                             putExtra(Intent.EXTRA_TEXT,
-                                "Spotkerja — find the best desk spot using phone sensors. " +
+                                "SpotWise — find your perfect work spot using phone sensors. " +
                                     "https://play.google.com/store/apps/details?id=${ctx.packageName}")
                         }
                         ctx.startActivity(Intent.createChooser(i, "Share"))
@@ -125,7 +258,7 @@ fun SettingsScreen(
                     }) { Text("Rate") }
                 }
                 HorizontalDivider(color = p.border, modifier = Modifier.padding(horizontal = 16.dp))
-                SettingsRow(Icons.Default.Info, "About Spotkerja", "v$appVersion") {
+                SettingsRow(Icons.Default.Info, "About SpotWise", "v$appVersion") {
                     TextButton(onClick = { showAbout = true }) { Text("View") }
                 }
             }
@@ -135,7 +268,7 @@ fun SettingsScreen(
     if (showAbout) {
         AlertDialog(
             onDismissRequest = { showAbout = false },
-            title = { Text("Spotkerja") },
+            title = { Text("SpotWise") },
             text = {
                 Text(
                     "Find the best spot to work, study, game or take calls using phone sensors: " +
@@ -151,8 +284,40 @@ fun SettingsScreen(
 }
 
 @Composable
+private fun OptDivider() {
+    HorizontalDivider(color = LocalPalette.current.border,
+        modifier = Modifier.padding(horizontal = 16.dp))
+}
+
+@Composable
+private fun MetricToggle(
+    icon: ImageVector,
+    title: String,
+    sub: String,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    val p = LocalPalette.current
+    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Surface(Modifier.size(36.dp), shape = RoundedCornerShape(10.dp),
+            color = p.accentDim.copy(alpha = 0.15f)) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(icon, null, Modifier.size(18.dp), tint = p.accent)
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.bodyMedium)
+            Text(sub, style = MaterialTheme.typography.labelSmall, color = p.textDim)
+        }
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
+@Composable
 private fun SettingsRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     title: String,
     sub: String,
     trailing: @Composable () -> Unit,

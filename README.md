@@ -1,4 +1,4 @@
-# Spotkerja
+# SpotWise
 
 Aplikasi Android untuk menemukan **posisi meja kerja terbaik** di dalam ruangan berdasarkan sensor HP. 100% lokal — tanpa backend, tanpa LLM, tanpa internet wajib (ping diarahkan ke gateway/router lokal).
 

@@ -26,7 +26,7 @@ object Exporter {
         val sb = StringBuilder()
         val date = SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault())
             .format(Date(session.createdAtEpochMs))
-        sb.appendLine("Spotkerja — scan report (${session.mode})")
+        sb.appendLine("SpotWise — scan report (${session.mode})")
         sb.appendLine(date)
         sb.appendLine()
         ScoreEngine.bestSpot(session.spots)?.let {
@@ -54,7 +54,7 @@ object Exporter {
     suspend fun export(ctx: Context, session: ScanSession, format: ExportFormat) =
         withContext(Dispatchers.IO) {
             val dir = File(ctx.cacheDir, "exports").apply { mkdirs() }
-            val base = "spotkerja-${session.id}"
+            val base = "spotwise-${session.id}"
             val file = File(dir, "$base.${format.ext}")
             when (format) {
                 ExportFormat.PNG -> Infographic.writePng(session, file)
@@ -65,7 +65,7 @@ object Exporter {
             val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file)
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = format.mime
-                putExtra(Intent.EXTRA_SUBJECT, "Spotkerja — ${session.mode} ${session.bestSpotLabel ?: ""}")
+                putExtra(Intent.EXTRA_SUBJECT, "SpotWise — ${session.mode} ${session.bestSpotLabel ?: ""}")
                 if (format == ExportFormat.TEXT) {
                     putExtra(Intent.EXTRA_TEXT, summaryText(session))
                 }

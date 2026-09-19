@@ -15,6 +15,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -26,6 +28,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -61,7 +64,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             val vm: AppViewModel = viewModel()
             val theme by vm.theme.collectAsState()
-            SpotkerjaTheme(theme) {
+            val themeMode by vm.themeMode.collectAsState()
+            SpotkerjaTheme(theme, themeMode) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     SpotkerjaApp(vm)
                 }
@@ -106,6 +110,10 @@ fun SpotkerjaApp(vm: AppViewModel) {
     val history by vm.history.collectAsState()
     val progress by vm.scanProgress.collectAsState()
     val adsEnabled by vm.adsEnabled.collectAsState()
+    val themeMode by vm.themeMode.collectAsState()
+    val scanOptions by vm.scanOptions.collectAsState()
+    val fastDuration by vm.fastDurationSec.collectAsState()
+    val isFastScan by vm.isFastScan.collectAsState()
     var exporting by remember { mutableStateOf(false) }
 
     val backStack by nav.currentBackStackEntryAsState()
@@ -174,6 +182,21 @@ fun SpotkerjaApp(vm: AppViewModel) {
             }
         }
     ) { padding ->
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            p.accent.copy(alpha = 0.07f),
+                            p.bg.copy(alpha = 0f),
+                        ),
+                        startY = 0f,
+                        endY = 600f,
+                    )
+                )
+                .background(p.bg)
+        ) {
         NavHost(
             nav, startDestination = Routes.HOME,
             modifier = Modifier.padding(padding),
@@ -202,17 +225,28 @@ fun SpotkerjaApp(vm: AppViewModel) {
                         vm.startScan()
                         nav.navigate(Routes.SCAN)
                     },
+                    onFastScan = {
+                        permLauncher.launch(arrayOf(
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION,
+                            Manifest.permission.RECORD_AUDIO,
+                        ))
+                        vm.startFastScan()
+                        nav.navigate(Routes.SCAN)
+                    },
+                    fastDurationSec = fastDuration,
                     onOpenSession = { s -> nav.navigate(Routes.session(s.id)) },
                 )
             }
             composable(Routes.SCAN) {
                 val sm = remember { ctx.getSystemService(Context.SENSOR_SERVICE) as SensorManager }
                 ScanScreen(
-                    spotNames = spotNames,
+                    spotNames = if (isFastScan) listOf("My Spot") else spotNames,
                     currentSpotIndex = currentSpot,
                     spotsDone = spots,
                     progress = progress,
                     hasLightSensor = sm.getDefaultSensor(Sensor.TYPE_LIGHT) != null,
+                    opts = scanOptions,
                     onStopEarly = vm::stopCurrentSpotEarly,
                     onScanNext = vm::scanNextSpot,
                     onRescan = vm::rescanCurrentSpot,
@@ -250,13 +284,19 @@ fun SpotkerjaApp(vm: AppViewModel) {
                 val theme by vm.theme.collectAsState()
                 SettingsScreen(
                     theme = theme,
+                    themeMode = themeMode,
                     adsEnabled = adsEnabled,
+                    scanOptions = scanOptions,
+                    fastDurationSec = fastDuration,
                     onThemeChange = vm::setTheme,
+                    onThemeModeChange = vm::setThemeMode,
                     onAdsChange = vm::setAdsEnabled,
-                    appVersion = "1.0.0",
+                    onScanOptionsChange = vm::setScanOptions,
+                    onFastDurationChange = vm::setFastDuration,
+                    appVersion = "2.0.0",
                 )
             }
-            composable(Routes.SESSION) { backStackEntry ->
+                composable(Routes.SESSION) { backStackEntry ->
                 val id = backStackEntry.arguments?.getString("id")
                 var session by remember { mutableStateOf<ScanSession?>(null) }
                 LaunchedEffect(id) { id?.let { vm.sessionById(it) { s -> session = s } } }
@@ -275,6 +315,7 @@ fun SpotkerjaApp(vm: AppViewModel) {
                     )
                 }
             }
+        }
         }
     }
 }

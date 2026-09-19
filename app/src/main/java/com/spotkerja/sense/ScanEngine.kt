@@ -6,6 +6,7 @@ import com.spotkerja.data.SpotMetrics
 import com.spotkerja.data.SpotResult
 import com.spotkerja.data.SunPosition
 import com.spotkerja.data.WorkMode
+import com.spotkerja.settings.ScanOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -42,28 +43,31 @@ class ScanEngine(private val ctx: Context) {
         spotLabel: String,
         durationSec: Int,
         mode: WorkMode,
+        opts: ScanOptions = ScanOptions(),
         onDone: (SpotResult) -> Unit,
     ) {
         if (isRunning()) return
         val acc = ScanAccumulator()
         currentAcc = acc
-        val wifi = WifiSampler(ctx)
-        val ping = PingSampler(ctx)
-        val cell = CellSampler(ctx)
-        ambient = AmbientSampler(ctx, acc).also { it.start() }
-        noise = NoiseSampler(ctx, acc).also { it.start(scope) }
+        val wifi = if (opts.wifi) WifiSampler(ctx) else null
+        val ping = if (opts.ping) PingSampler(ctx, opts.pingHost) else null
+        val cell = if (opts.cellular) CellSampler(ctx) else null
+        ambient = AmbientSampler(ctx, acc, opts.light, opts.orientation)
+            .takeIf { it.hasAny() }?.also { it.start() }
+        noise = if (opts.noise) NoiseSampler(ctx, acc).also { it.start(scope) } else null
 
         job = scope.launch(Dispatchers.Default) {
             _progress.value = ScanProgress(running = true, totalSec = durationSec)
             val deadline = System.currentTimeMillis() + durationSec * 1000L
             var tick = 0
             while (isActive && System.currentTimeMillis() < deadline) {
-                val rssi = wifi.sample(acc)
-                val cellDbm = cell.sample(acc)
+                val rssi = wifi?.sample(acc)
+                val cellDbm = cell?.sample(acc)
                 // Ping tiap ~2 detik agar jumlah sampel wajar
-                if (tick % 2 == 0) launch { ping.pingOnce(acc) }
+                if (ping != null && tick % 2 == 0) launch { ping.pingOnce(acc) }
                 val live = LiveMetrics(
                     wifiRssiDbm = rssi,
+                    pingMs = acc.pings.lastOrNull(),
                     lux = acc.lux.lastOrNull(),
                     noiseDb = acc.noise.lastOrNull(),
                     azimuthDeg = acc.azimuthDeg,
@@ -114,9 +118,11 @@ class ScanEngine(private val ctx: Context) {
         val glare = if (sunAz != null && acc.azimuthDeg != null) {
             SunPosition.angularDiff(acc.azimuthDeg!!, sunAz) < 45f
         } else null
+        // Jika orientasi dimatikan, azimuth tidak dikumpulkan → metrik jadi null dan
+        // ScoreEngine menormalkan ulang bobotnya.
 
         val metrics = SpotMetrics(
-            wifiRssiDbm = acc.rssi.avgOrNullI(),
+            wifiRssiDbm = acc.rssi.avgOrNullI().takeIf { acc.rssi.isNotEmpty() },
             wifiLinkSpeedMbps = acc.linkSpeed,
             wifiBand = acc.wifiBand,
             pingAvgMs = pings.avgOrNull(),

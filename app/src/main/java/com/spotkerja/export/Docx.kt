@@ -29,7 +29,7 @@ object Docx {
         val doc = buildString {
             append("""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>""")
-            append(p("Spotkerja — Scan Report", bold = true, sizeHalfPt = 56))
+            append(p("SpotWise — Scan Report", bold = true, sizeHalfPt = 56))
             append(p("${session.mode} mode • $date"))
             append(p(""))
             best?.let { append(p("BEST SPOT: ${it.label} — ${"%.0f".format(it.totalScore)}/100", bold = true, sizeHalfPt = 36)) }

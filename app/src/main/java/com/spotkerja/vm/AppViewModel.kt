@@ -10,7 +10,9 @@ import com.spotkerja.data.SpotResult
 import com.spotkerja.data.WorkMode
 import com.spotkerja.sense.ScanEngine
 import com.spotkerja.sense.ScanProgress
+import com.spotkerja.settings.ScanOptions
 import com.spotkerja.settings.SettingsStore
+import com.spotkerja.settings.ThemeMode
 import com.spotkerja.ui.theme.ThemeOption
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,11 +30,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _theme = MutableStateFlow(settings.theme)
     val theme: StateFlow<ThemeOption> = _theme
 
+    private val _themeMode = MutableStateFlow(settings.themeMode)
+    val themeMode: StateFlow<ThemeMode> = _themeMode
+
     private val _mode = MutableStateFlow(WorkMode.WORK)
     val mode: StateFlow<WorkMode> = _mode
 
     private val _durationSec = MutableStateFlow(settings.durationSec)
     val durationSec: StateFlow<Int> = _durationSec
+
+    private val _fastDurationSec = MutableStateFlow(settings.fastDurationSec)
+    val fastDurationSec: StateFlow<Int> = _fastDurationSec
+
+    private val _scanOptions = MutableStateFlow(settings.scanOptions)
+    val scanOptions: StateFlow<ScanOptions> = _scanOptions
+
+    /** True saat sesi aktif adalah Fast Scan (1 spot, durasi singkat). */
+    private val _isFastScan = MutableStateFlow(false)
+    val isFastScan: StateFlow<Boolean> = _isFastScan
 
     private val _phase = MutableStateFlow(ScanPhase.SETUP)
     val phase: StateFlow<ScanPhase> = _phase
@@ -62,7 +77,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     init { refreshHistory() }
 
     fun setTheme(t: ThemeOption) { _theme.value = t; settings.theme = t }
+    fun setThemeMode(m: ThemeMode) { _themeMode.value = m; settings.themeMode = m }
     fun setMode(m: WorkMode) { _mode.value = m }
+
+    fun setFastDuration(sec: Int) {
+        _fastDurationSec.value = sec.coerceIn(10, 30)
+        settings.fastDurationSec = _fastDurationSec.value
+    }
+
+    fun setScanOptions(o: ScanOptions) { _scanOptions.value = o; settings.scanOptions = o }
     fun setDuration(sec: Int) {
         _durationSec.value = sec.coerceIn(15, 60)
         settings.durationSec = _durationSec.value
@@ -82,29 +105,46 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun startScan() {
+        _isFastScan.value = false
         _spots.value = emptyList()
         _currentSpotIndex.value = 0
         _phase.value = ScanPhase.SCANNING
         startCurrentSpot()
     }
 
+    /** Fast Scan: satu titik saja, durasi singkat, nama "My Spot". */
+    fun startFastScan() {
+        _isFastScan.value = true
+        _spots.value = emptyList()
+        _currentSpotIndex.value = 0
+        _phase.value = ScanPhase.SCANNING
+        startCurrentSpot()
+    }
+
+    private fun activeSpotNames(): List<String> =
+        if (_isFastScan.value) listOf("My Spot") else _spotNames.value
+
+    private fun activeDuration(): Int =
+        if (_isFastScan.value) _fastDurationSec.value else _durationSec.value
+
     private fun startCurrentSpot() {
-        val label = _spotNames.value.getOrNull(_currentSpotIndex.value) ?: return
-        engine.start(viewModelScope, label, _durationSec.value, _mode.value) { result ->
+        val label = activeSpotNames().getOrNull(_currentSpotIndex.value) ?: return
+        engine.start(viewModelScope, label, activeDuration(), _mode.value,
+            _scanOptions.value) { result ->
             onSpotDone(result)
         }
     }
 
     fun stopCurrentSpotEarly() {
-        val label = _spotNames.value.getOrNull(_currentSpotIndex.value) ?: return
-        engine.stop(label, _durationSec.value, _mode.value) { result -> onSpotDone(result) }
+        val label = activeSpotNames().getOrNull(_currentSpotIndex.value) ?: return
+        engine.stop(label, activeDuration(), _mode.value) { result -> onSpotDone(result) }
     }
 
     private fun onSpotDone(result: SpotResult) {
         _spots.value = _spots.value + result
         val next = _currentSpotIndex.value + 1
         _currentSpotIndex.value = next
-        if (next >= _spotNames.value.size) finishSession()
+        if (next >= activeSpotNames().size) finishSession()
     }
 
     fun scanNextSpot() = startCurrentSpot()
@@ -149,6 +189,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _phase.value = ScanPhase.SETUP
         _spots.value = emptyList()
         _currentSpotIndex.value = 0
+        _isFastScan.value = false
     }
 
     fun refreshHistory() {

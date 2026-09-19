@@ -50,6 +50,8 @@ fun HomeScreen(
     onSpotCountChange: (Int) -> Unit,
     onSpotNameChange: (Int, String) -> Unit,
     onStartScan: () -> Unit,
+    onFastScan: () -> Unit,
+    fastDurationSec: Int,
     onOpenSession: (ScanSession) -> Unit,
 ) {
     val haptics = LocalHapticFeedback.current
@@ -80,8 +82,8 @@ fun HomeScreen(
                             }
                             Spacer(Modifier.width(12.dp))
                             Column {
-                                Text("Spotkerja", style = MaterialTheme.typography.headlineSmall)
-                                Text("sensor-based spot finder",
+                                Text("SpotWise", style = MaterialTheme.typography.headlineSmall)
+                                Text("find your perfect spot",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = p.textDim)
                             }
@@ -200,20 +202,47 @@ fun HomeScreen(
         }
 
         item {
-            Button(
-                onClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onStartScan()
-                },
-                Modifier.fillMaxWidth().height(60.dp),
-                shape = RoundedCornerShape(18.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = p.accent, contentColor = p.bg),
-            ) {
-                Icon(Icons.Default.PlayArrow, null, Modifier.size(24.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Start Scan", style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.ExtraBold)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onFastScan()
+                    },
+                    Modifier.weight(1f).height(60.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    border = BorderStroke(1.dp, p.accent),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = p.accent),
+                ) {
+                    Icon(Icons.Default.Bolt, null, Modifier.size(22.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Column {
+                        Text("Fast Scan", style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold)
+                        Text("${fastDurationSec}s · 1 spot",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = p.textDim)
+                    }
+                }
+                Button(
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onStartScan()
+                    },
+                    Modifier.weight(1.2f).height(60.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = p.accent, contentColor = p.bg),
+                ) {
+                    Icon(Icons.Default.PlayArrow, null, Modifier.size(24.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Column {
+                        Text("Start Scan", style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.ExtraBold)
+                        Text("$spotCount spots · ${durationSec}s",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = p.bg.copy(alpha = 0.7f))
+                    }
+                }
             }
             Text(
                 "Location & mic permissions are requested on start. Everything runs on-device.",

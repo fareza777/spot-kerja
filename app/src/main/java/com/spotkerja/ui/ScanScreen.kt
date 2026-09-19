@@ -17,6 +17,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.spotkerja.data.SpotResult
 import com.spotkerja.sense.ScanProgress
+import com.spotkerja.settings.ScanOptions
 import com.spotkerja.ui.components.GlassCard
 import com.spotkerja.ui.components.LiveTile
 import com.spotkerja.ui.components.RadarSweep
@@ -29,6 +30,7 @@ fun ScanScreen(
     spotsDone: List<SpotResult>,
     progress: ScanProgress,
     hasLightSensor: Boolean,
+    opts: ScanOptions = ScanOptions(),
     onStopEarly: () -> Unit,
     onScanNext: () -> Unit,
     onRescan: () -> Unit,
@@ -65,26 +67,34 @@ fun ScanScreen(
             }
             item {
                 val l = progress.live
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val tiles = buildList<@Composable (Modifier) -> Unit> {
+                    if (opts.wifi) add { m ->
                         LiveTile("Wi-Fi", l.wifiRssiDbm?.let { "$it" } ?: "—",
-                            l.wifiBand?.let { "dBm • $it" } ?: "dBm", Icons.Default.Wifi,
-                            Modifier.weight(1f))
-                        LiveTile("Ping", l.pingMs?.let { "≈${it.toInt()}" } ?: "—", "ms • router",
-                            Icons.Default.Speed, Modifier.weight(1f))
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            l.wifiBand?.let { "dBm • $it" } ?: "dBm", Icons.Default.Wifi, m) }
+                    if (opts.ping) add { m ->
+                        LiveTile("Ping", l.pingMs?.let { "≈${it.toInt()}" } ?: "—",
+                            if (opts.pingHost.isBlank()) "ms • router" else "ms • ${opts.pingHost}",
+                            Icons.Default.Speed, m) }
+                    if (opts.light) add { m ->
                         LiveTile("Light", l.lux?.let { "≈${it.toInt()}" } ?: "—",
                             if (!hasLightSensor) "lux • sensor n/a" else "lux",
-                            Icons.Default.LightMode, Modifier.weight(1f))
+                            Icons.Default.LightMode, m) }
+                    if (opts.noise) add { m ->
                         LiveTile("Noise", l.noiseDb?.let { "≈${it.toInt()}" } ?: "—", "dB est.",
-                            Icons.Default.Mic, Modifier.weight(1f))
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icons.Default.Mic, m) }
+                    if (opts.orientation) add { m ->
                         LiveTile("Facing", l.azimuthDeg?.let { "${it.toInt()}°" } ?: "—",
-                            "azimuth", Icons.Default.Explore, Modifier.weight(1f))
+                            "azimuth", Icons.Default.Explore, m) }
+                    if (opts.cellular) add { m ->
                         LiveTile("Cellular", l.cellularDbm?.let { "$it" } ?: "—", "dBm",
-                            Icons.Default.SignalCellularAlt, Modifier.weight(1f))
+                            Icons.Default.SignalCellularAlt, m) }
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    tiles.chunked(2).forEach { row ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            row.forEach { tile -> tile(Modifier.weight(1f)) }
+                            if (row.size == 1) Spacer(Modifier.weight(1f))
+                        }
                     }
                 }
             }
