@@ -114,4 +114,35 @@ class ScoreEngineTest {
         assertEquals(10f, SunPosition.angularDiff(5f, 355f), 0.01f)
         assertEquals(180f, SunPosition.angularDiff(0f, 180f), 0.01f)
     }
+
+    @Test
+    fun `unstable light gets penalized`() {
+        val stable = ScoreEngine.lightScore(400f, WorkMode.WORK, luxStdDev = 10f)!!
+        val flicker = ScoreEngine.lightScore(400f, WorkMode.WORK, luxStdDev = 300f)!!
+        assertTrue(stable > flicker)
+        assertTrue(stable - flicker <= 15.5f) // penalti dibatasi 15
+    }
+
+    @Test
+    fun `facing measured light source bumps orientation`() {
+        val facing = ScoreEngine.orientationScore(100f, 280f, 110f)!!
+        val away = ScoreEngine.orientationScore(280f, 280f, 110f)!!
+        assertTrue(facing > away)
+    }
+
+    @Test
+    fun `congestion drops with more nearby APs`() {
+        assertEquals(100f, ScoreEngine.congestionScore(0)!!, 0.01f)
+        assertTrue(ScoreEngine.congestionScore(8)!! < ScoreEngine.congestionScore(2)!!)
+        assertNull(ScoreEngine.congestionScore(null))
+    }
+
+    @Test
+    fun `unreachable ping does not count as packet loss`() {
+        val m = SpotMetrics(wifiRssiDbm = -50, pingUnreachable = true, packetLossPct = null)
+        val (scores, _) = ScoreEngine.scoreSpot(m, WorkMode.WORK)
+        assertNull(scores.packetLoss)
+        val notes = ScoreEngine.notesFor(m, scores)
+        assertTrue(notes.any { "unreachable" in it })
+    }
 }

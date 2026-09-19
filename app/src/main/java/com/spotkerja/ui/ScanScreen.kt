@@ -21,6 +21,7 @@ import com.spotkerja.settings.ScanOptions
 import com.spotkerja.ui.components.GlassCard
 import com.spotkerja.ui.components.LiveTile
 import com.spotkerja.ui.components.RadarSweep
+import com.spotkerja.ui.components.Sparkline
 import com.spotkerja.ui.theme.*
 
 @Composable
@@ -40,6 +41,12 @@ fun ScanScreen(
     val p = LocalPalette.current
     val sc = LocalScoreColor.current
     val currentLabel = spotNames.getOrNull(currentSpotIndex)
+
+    // Haptic tick tiap detik selama scan berjalan.
+    LaunchedEffect(progress.elapsedSec) {
+        if (progress.running && progress.elapsedSec > 0)
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+    }
 
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 20.dp),
@@ -94,6 +101,29 @@ fun ScanScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             row.forEach { tile -> tile(Modifier.weight(1f)) }
                             if (row.size == 1) Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+            // Live sparklines — sensor tampak "hidup" selama scan.
+            if ((opts.light && progress.luxSeries.size > 1) ||
+                (opts.noise && progress.noiseSeries.size > 1)) {
+                item {
+                    GlassCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp)) {
+                            if (opts.light && progress.luxSeries.size > 1) {
+                                Text("Light trend", style = MaterialTheme.typography.labelSmall,
+                                    color = p.textDim)
+                                Spacer(Modifier.height(6.dp))
+                                Sparkline(progress.luxSeries, color = p.gold)
+                                Spacer(Modifier.height(10.dp))
+                            }
+                            if (opts.noise && progress.noiseSeries.size > 1) {
+                                Text("Noise trend", style = MaterialTheme.typography.labelSmall,
+                                    color = p.textDim)
+                                Spacer(Modifier.height(6.dp))
+                                Sparkline(progress.noiseSeries, color = p.accent2)
+                            }
                         }
                     }
                 }

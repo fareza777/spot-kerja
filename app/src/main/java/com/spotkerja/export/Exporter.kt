@@ -16,8 +16,24 @@ enum class ExportFormat(val label: String, val mime: String, val ext: String) {
     PNG("PNG infographic", "image/png", "png"),
     PDF("PDF report", "application/pdf", "pdf"),
     DOCX("Word document", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx"),
+    CSV("CSV data", "text/csv", "csv"),
     TEXT("Text summary", "text/plain", "txt"),
 }
+
+/** Warna infografis mengikuti tema aktif — dibangun dari palette Compose di callsite. */
+data class InfoColors(
+    val bg: Int,
+    val card: Int,
+    val border: Int,
+    val accent: Int,
+    val accent2: Int,
+    val gold: Int,
+    val text: Int,
+    val dim: Int,
+    val good: Int,
+    val mid: Int,
+    val bad: Int,
+)
 
 /** Export/share hasil scan: teks, PNG infografis, PDF, atau DOCX. */
 object Exporter {
@@ -51,15 +67,38 @@ object Exporter {
         return sb.toString()
     }
 
-    suspend fun export(ctx: Context, session: ScanSession, format: ExportFormat) =
+    fun summaryCsv(session: ScanSession): String {
+        val sb = StringBuilder()
+        sb.appendLine("spot,score,wifi_dbm,wifi_band,wifi_congestion,ping_ms,jitter_ms,loss_pct,lux_avg,lux_stddev,noise_db,azimuth_deg,sun_azimuth_deg,glare_risk,cellular_dbm,confidence_pct")
+        session.spots.forEach { s ->
+            val m = s.metrics
+            fun f(v: Any?) = v?.toString() ?: ""
+            sb.appendLine(listOf(
+                "\"${s.label.replace("\"", "\"\"")}\"",
+                "%.1f".format(s.totalScore), f(m.wifiRssiDbm), f(m.wifiBand),
+                f(m.wifiCongestion), f(m.pingAvgMs), f(m.pingJitterMs), f(m.packetLossPct),
+                f(m.luxAvg), f(m.luxStdDev), f(m.noiseDbAvg), f(m.azimuthDeg),
+                f(m.sunAzimuthDeg), f(m.glareRisk), f(m.cellularDbm), f(s.confidencePct),
+            ).joinToString(","))
+        }
+        return sb.toString()
+    }
+
+    suspend fun export(ctx: Context, session: ScanSession, format: ExportFormat,
+                       colors: InfoColors? = null) =
         withContext(Dispatchers.IO) {
             val dir = File(ctx.cacheDir, "exports").apply { mkdirs() }
             val base = "spotwise-${session.id}"
             val file = File(dir, "$base.${format.ext}")
             when (format) {
-                ExportFormat.PNG -> Infographic.writePng(session, file)
-                ExportFormat.PDF -> Infographic.writePdf(session, file)
-                ExportFormat.DOCX -> Docx.write(session, file)
+                ExportFormat.PNG -> Infographic.writePng(session, file, colors)
+                ExportFormat.PDF -> Infographic.writePdf(session, file, colors)
+                ExportFormat.DOCX -> {
+                    val png = File(dir, "$base.chart.png")
+                    Infographic.writePng(session, png, colors)
+                    Docx.write(session, file, png)
+                }
+                ExportFormat.CSV -> file.writeText(summaryCsv(session))
                 ExportFormat.TEXT -> file.writeText(summaryText(session))
             }
             val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file)

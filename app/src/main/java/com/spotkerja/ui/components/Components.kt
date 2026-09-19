@@ -275,6 +275,86 @@ fun RadarSweep(progressFrac: Float, modifier: Modifier = Modifier, sizeDp: Int =
     }
 }
 
+/** Polygon/radar chart overlaying per-metric sub-scores for up to 3 spots. */
+@Composable
+fun RadarChart(
+    series: List<Pair<String, List<Float?>>>, // label → sub-scores (0-100, null = n/a)
+    axisLabels: List<String>,
+    modifier: Modifier = Modifier,
+    sizeDp: Int = 220,
+) {
+    val p = LocalPalette.current
+    val colors = listOf(p.accent, p.gold, p.accent2)
+    val n = axisLabels.size
+    if (n < 3 || series.isEmpty()) return
+    Box(modifier.size(sizeDp.dp), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.fillMaxSize()) {
+            val c = center
+            val r = size.minDimension / 2 * 0.78f
+            val pt = { i: Int, f: Float ->
+                val a = -Math.PI / 2 + 2 * Math.PI * i / n
+                Offset(c.x + (r * f * kotlin.math.cos(a)).toFloat(),
+                    c.y + (r * f * kotlin.math.sin(a)).toFloat())
+            }
+            // rings + spokes
+            listOf(1f, 0.66f, 0.33f).forEach { f ->
+                val path = Path().apply {
+                    repeat(n) { i -> if (i == 0) moveTo(pt(i, f).x, pt(i, f).y) else lineTo(pt(i, f).x, pt(i, f).y) }
+                    close()
+                }
+                drawPath(path, p.border, style = Stroke(1.dp.toPx()))
+            }
+            repeat(n) { i -> drawLine(p.border, c, pt(i, 1f), 1.dp.toPx()) }
+            // series polygons
+            series.take(3).forEachIndexed { si, (_, vals) ->
+                val col = colors[si % colors.size]
+                val pts = vals.mapIndexedNotNull { i, v -> v?.let { pt(i, it / 100f) } }
+                if (pts.size >= 3) {
+                    val path = Path().apply {
+                        pts.forEachIndexed { i, o -> if (i == 0) moveTo(o.x, o.y) else lineTo(o.x, o.y) }
+                        close()
+                    }
+                    drawPath(path, col.copy(alpha = 0.16f))
+                    drawPath(path, col, style = Stroke(2.dp.toPx()))
+                    pts.forEach { drawCircle(col, 3.dp.toPx(), it) }
+                }
+            }
+        }
+    }
+}
+
+/** Rolling sparkline for live series (lux/noise) during a scan. */
+@Composable
+fun Sparkline(values: List<Float>, modifier: Modifier = Modifier, color: Color? = null) {
+    val p = LocalPalette.current
+    val col = color ?: p.accent
+    if (values.size < 2) {
+        Box(modifier.height(44.dp).fillMaxWidth())
+        return
+    }
+    Canvas(modifier.height(44.dp).fillMaxWidth()) {
+        val max = values.max(); val min = values.min()
+        val range = (max - min).coerceAtLeast(1f)
+        val step = size.width / (values.size - 1)
+        val path = Path()
+        values.forEachIndexed { i, v ->
+            val x = i * step
+            val y = size.height - ((v - min) / range) * size.height
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        // area fill
+        val fill = Path().apply {
+            addPath(path)
+            lineTo(size.width, size.height); lineTo(0f, size.height); close()
+        }
+        drawPath(fill, Brush.verticalGradient(listOf(col.copy(alpha = 0.25f), Color.Transparent)))
+        drawPath(path, col, style = Stroke(2.dp.toPx()))
+        drawCircle(col, 3.5f.dp.toPx(), Offset(
+            (values.size - 1) * step,
+            size.height - ((values.last() - min) / range) * size.height))
+    }
+}
+
 /** Consistent section header. */
 @Composable
 fun SectionHeader(title: String, modifier: Modifier = Modifier, trailing: (@Composable () -> Unit)? = null) {

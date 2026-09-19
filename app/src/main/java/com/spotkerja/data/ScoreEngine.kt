@@ -13,20 +13,24 @@ object ScoreEngine {
 
     fun weightsFor(mode: WorkMode): MetricWeights = when (mode) {
         WorkMode.WORK -> MetricWeights(
-            wifi = 0.20f, ping = 0.10f, jitter = 0.05f, packetLoss = 0.10f,
+            wifi = 0.17f, ping = 0.10f, jitter = 0.05f, packetLoss = 0.10f,
             light = 0.22f, noise = 0.23f, orientation = 0.05f, cellular = 0.05f,
+            wifiCongestion = 0.05f,
         )
         WorkMode.STUDY -> MetricWeights(
-            wifi = 0.12f, ping = 0.04f, jitter = 0.02f, packetLoss = 0.05f,
+            wifi = 0.10f, ping = 0.04f, jitter = 0.02f, packetLoss = 0.05f,
             light = 0.35f, noise = 0.34f, orientation = 0.03f, cellular = 0.05f,
+            wifiCongestion = 0.03f,
         )
         WorkMode.GAMING -> MetricWeights(
-            wifi = 0.20f, ping = 0.25f, jitter = 0.18f, packetLoss = 0.22f,
+            wifi = 0.15f, ping = 0.25f, jitter = 0.18f, packetLoss = 0.22f,
             light = 0.05f, noise = 0.05f, orientation = 0.00f, cellular = 0.05f,
+            wifiCongestion = 0.08f,
         )
         WorkMode.VIDEO_CALL -> MetricWeights(
-            wifi = 0.22f, ping = 0.15f, jitter = 0.13f, packetLoss = 0.15f,
+            wifi = 0.18f, ping = 0.15f, jitter = 0.13f, packetLoss = 0.15f,
             light = 0.18f, noise = 0.10f, orientation = 0.04f, cellular = 0.03f,
+            wifiCongestion = 0.04f,
         )
     }
 
@@ -64,7 +68,7 @@ object ScoreEngine {
      * Skor cahaya: 100 di dalam rentang ideal, meluruh gaussian di luar.
      * Lux sangat tinggi (>1500) juga dihukum — potensi silau/panas.
      */
-    fun lightScore(lux: Float?, mode: WorkMode): Float? = lux?.let { l ->
+    fun lightScore(lux: Float?, mode: WorkMode, luxStdDev: Float? = null): Float? = lux?.let { l ->
         val band = idealLuxBand(mode)
         val base = when {
             l < band.start -> 100f * exp(-sq((band.start - l) / max(band.start, 1f)) * 3f)
@@ -72,7 +76,9 @@ object ScoreEngine {
             else -> 100f
         }
         val glarePenalty = if (l > 1500f) min(30f, (l - 1500f) / 100f) else 0f
-        clampScore(base - glarePenalty)
+        // Cahaya tidak stabil (flicker/lalu-lalang) mengurangi skor — maks -15.
+        val stabilityPenalty = luxStdDev?.let { min(15f, max(0f, (it - 80f) / 40f) * 3f) } ?: 0f
+        clampScore(base - glarePenalty - stabilityPenalty)
     }
 
     /** Level noise relatif: ≤30 dB(est) hening, ≥75 dB(est) bising. */
@@ -81,12 +87,32 @@ object ScoreEngine {
     }
 
     /**
-     * Orientasi vs matahari: silau bila menghadap matahari (±45°) saat siang,
-     * bonus kecil bila membelakangi/menyamping (cahaya alami tanpa silau layar).
+     * Orientasi kontinu: makin menghadap matahari (siang) makin rendah — silau layar.
+     * Bonus kecil bila menghadap arah sumber cahaya terukur (lightDirectionDeg).
      */
-    fun orientationScore(glareRisk: Boolean?, sunAzimuthDeg: Float?): Float? {
-        if (sunAzimuthDeg == null) return null
-        return if (glareRisk == true) 40f else 80f
+    fun orientationScore(
+        azimuthDeg: Float?,
+        sunAzimuthDeg: Float?,
+        lightDirectionDeg: Float? = null,
+    ): Float? {
+        if (sunAzimuthDeg == null || azimuthDeg == null) return null
+        val diff = SunPosition.angularDiff(azimuthDeg, sunAzimuthDeg)
+        var score = when {
+            diff < 30f -> 35f
+            diff < 60f -> 55f
+            diff < 120f -> 80f
+            else -> 95f
+        }
+        // Menghadap arah sumber cahaya terkuat yang terukur → cahaya muka lebih baik.
+        if (lightDirectionDeg != null && SunPosition.angularDiff(azimuthDeg, lightDirectionDeg) < 45f) {
+            score = min(100f, score + 5f)
+        }
+        return score
+    }
+
+    /** Kanal Wi-Fi padat: 0 AP lain ideal, ≥10 buruk. */
+    fun congestionScore(nearbyAps: Int?): Float? = nearbyAps?.let {
+        clampScore(100f - it * 9f)
     }
 
     /** Sinyal seluler -50 dBm ≈ penuh, -115 dBm ≈ hilang. */
@@ -102,10 +128,12 @@ object ScoreEngine {
             ping = pingScore(metrics.pingAvgMs),
             jitter = jitterScore(metrics.pingJitterMs),
             packetLoss = packetLossScore(metrics.packetLossPct),
-            light = lightScore(metrics.luxAvg, mode),
+            light = lightScore(metrics.luxAvg, mode, metrics.luxStdDev),
             noise = noiseScore(metrics.noiseDbAvg),
-            orientation = orientationScore(metrics.glareRisk, metrics.sunAzimuthDeg),
+            orientation = orientationScore(
+                metrics.azimuthDeg, metrics.sunAzimuthDeg, metrics.lightDirectionDeg),
             cellular = cellularScore(metrics.cellularDbm),
+            wifiCongestion = congestionScore(metrics.wifiCongestion),
         )
         return scores to combine(scores, weightsFor(mode))
     }
@@ -121,12 +149,21 @@ object ScoreEngine {
         add(scores.jitter, w.jitter); add(scores.packetLoss, w.packetLoss)
         add(scores.light, w.light); add(scores.noise, w.noise)
         add(scores.orientation, w.orientation); add(scores.cellular, w.cellular)
+        add(scores.wifiCongestion, w.wifiCongestion)
         return if (wsum > 0f) acc / wsum else 0f
     }
 
     /** Short per-spot notes explaining what raised/lowered the score. */
     fun notesFor(metrics: SpotMetrics, scores: MetricScores): List<String> {
         val notes = mutableListOf<String>()
+        if (metrics.pingUnreachable) notes += "Ping target unreachable — check the host/Wi-Fi"
+        metrics.wifiCongestion?.let { if (it >= 8) notes += "Wi-Fi channel crowded ($it networks nearby)" }
+        metrics.lightDirectionDeg?.let { dir ->
+            metrics.azimuthDeg?.let { az ->
+                if (SunPosition.angularDiff(az, dir) < 45f)
+                    notes += "Facing the strongest measured light source"
+            }
+        }
         metrics.wifiRssiDbm?.let {
             when {
                 it >= -55 -> notes += "Excellent Wi-Fi signal ($it dBm)"

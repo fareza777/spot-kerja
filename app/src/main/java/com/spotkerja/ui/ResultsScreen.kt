@@ -17,9 +17,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.spotkerja.data.ScoreEngine
@@ -113,6 +115,65 @@ fun ResultsScreen(
             }
         }
 
+        // Radar overlay metrik per-spot (maks 3 teratas).
+        val radarAxes = listOf("Wi-Fi", "Ping", "Jitter", "Loss", "Light",
+            "Noise", "Facing", "Cell", "Crowd")
+        val radarSeries = sorted.take(3).map { s ->
+            s.label to listOf(s.scores.wifi, s.scores.ping, s.scores.jitter,
+                s.scores.packetLoss, s.scores.light, s.scores.noise,
+                s.scores.orientation, s.scores.cellular, s.scores.wifiCongestion)
+        }
+        if (radarSeries.any { s -> s.second.count { it != null } >= 3 }) {
+            item {
+                SectionHeader("Metric radar")
+                Spacer(Modifier.height(10.dp))
+                GlassCard(Modifier.fillMaxWidth()) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(18.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        RadarChart(radarSeries, radarAxes)
+                        Spacer(Modifier.height(10.dp))
+                        // legend
+                        radarSeries.forEachIndexed { i, (label, _) ->
+                            Row(verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(vertical = 1.dp)) {
+                                Box(Modifier.size(8.dp).clip(RoundedCornerShape(4.dp))
+                                    .background(
+                                        listOf(p.accent, p.gold, p.accent2)[i % 3]))
+                                Spacer(Modifier.width(6.dp))
+                                Text(label, style = MaterialTheme.typography.labelSmall,
+                                    color = p.textDim, maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(radarAxes.joinToString(" · "),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = p.textDim.copy(alpha = 0.6f),
+                            textAlign = TextAlign.Center)
+                    }
+                }
+            }
+        }
+
+        // Hint rescan bila ada risiko silau — posisi matahari bergeser tiap jam.
+        if (sorted.any { it.metrics.glareRisk == true }) {
+            item {
+                GlassCard(Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.WbSunny, null, Modifier.size(18.dp), tint = p.gold)
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            "Sun position shifts every hour — rescan in a few hours for a " +
+                                "clearer glare picture.",
+                            style = MaterialTheme.typography.bodySmall, color = p.textDim,
+                        )
+                    }
+                }
+            }
+        }
+
         item { SectionHeader("Spot details") }
         itemsIndexed(sorted) { rank, spot -> SpotDetailCard(spot, rank) }
 
@@ -127,7 +188,12 @@ fun ResultsScreen(
                 ExportChip(Icons.Default.Image, "PNG") { onExport(ExportFormat.PNG) }
                 ExportChip(Icons.Default.PictureAsPdf, "PDF") { onExport(ExportFormat.PDF) }
                 ExportChip(Icons.Default.Description, "Word") { onExport(ExportFormat.DOCX) }
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ExportChip(Icons.Default.TableChart, "CSV") { onExport(ExportFormat.CSV) }
                 ExportChip(Icons.AutoMirrored.Filled.TextSnippet, "Text") { onExport(ExportFormat.TEXT) }
+                Spacer(Modifier.weight(1f))
             }
         }
 
@@ -198,7 +264,8 @@ private fun SpotDetailCard(spot: SpotResult, rank: Int) {
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text("${spot.durationSec}s • ${spot.metrics.wifiSamples +
                         spot.metrics.pingSamples + spot.metrics.luxSamples +
-                        spot.metrics.noiseSamples} samples",
+                        spot.metrics.noiseSamples} samples" +
+                        (spot.confidencePct?.let { " • confidence $it%" } ?: ""),
                         style = MaterialTheme.typography.labelSmall,
                         color = p.textDim)
                 }
@@ -233,6 +300,8 @@ private fun SpotDetailCard(spot: SpotResult, rank: Int) {
                                 else -> "—"
                             })
                         MetricBar("Cellular", s.cellular, m.cellularDbm?.let { "$it dBm" } ?: "—")
+                        MetricBar("Wi-Fi crowding", s.wifiCongestion,
+                            m.wifiCongestion?.let { "$it APs nearby" } ?: "—")
                     }
                     if (spot.notes.isNotEmpty()) {
                         Spacer(Modifier.height(14.dp))

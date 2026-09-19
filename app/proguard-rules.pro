@@ -10,3 +10,4 @@
 
 # Keep serializable models
 -keep class com.spotkerja.data.** { *; }
+-keep class com.spotkerja.settings.ScanOptions { *; }

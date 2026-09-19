@@ -72,6 +72,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _adsEnabled = MutableStateFlow(settings.adsEnabled)
     val adsEnabled: StateFlow<Boolean> = _adsEnabled
 
+    private val _onboarded = MutableStateFlow(settings.onboarded)
+    val onboarded: StateFlow<Boolean> = _onboarded
+
+    fun markOnboarded() { _onboarded.value = true; settings.onboarded = true }
+
     val scanProgress: StateFlow<ScanProgress> = engine.progress
 
     init { refreshHistory() }
@@ -112,6 +117,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         startCurrentSpot()
     }
 
+    /** Deep-link dari widget: Fast Scan langsung jalan. */
+    fun fastScanFromWidget() {
+        if (_phase.value == ScanPhase.SCANNING) return
+        startFastScan()
+    }
+
     /** Fast Scan: satu titik saja, durasi singkat, nama "My Spot". */
     fun startFastScan() {
         _isFastScan.value = true
@@ -137,7 +148,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun stopCurrentSpotEarly() {
         val label = activeSpotNames().getOrNull(_currentSpotIndex.value) ?: return
-        engine.stop(label, activeDuration(), _mode.value) { result -> onSpotDone(result) }
+        engine.stop(label, activeDuration(), _mode.value, _scanOptions.value) { result -> onSpotDone(result) }
     }
 
     private fun onSpotDone(result: SpotResult) {
@@ -166,6 +177,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             mode = _mode.value.label,
             spots = _spots.value,
             bestSpotLabel = ScoreEngine.bestSpot(_spots.value)?.label,
+            optionsUsed = _scanOptions.value,
         )
         viewModelScope.launch {
             store.save(session)

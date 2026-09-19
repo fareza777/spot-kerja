@@ -21,6 +21,8 @@ data class ScanProgress(
     val elapsedSec: Int = 0,
     val totalSec: Int = 30,
     val live: LiveMetrics = LiveMetrics(),
+    val luxSeries: List<Float> = emptyList(),
+    val noiseSeries: List<Float> = emptyList(),
 )
 
 /** Mengorkestrasi satu scan spot: semua sampler berjalan, lalu hasil diagregasi. */
@@ -52,6 +54,7 @@ class ScanEngine(private val ctx: Context) {
         val wifi = if (opts.wifi) WifiSampler(ctx) else null
         val ping = if (opts.ping) PingSampler(ctx, opts.pingHost) else null
         val cell = if (opts.cellular) CellSampler(ctx) else null
+        val congestion = if (opts.wifi) WifiScanSampler(ctx) else null
         ambient = AmbientSampler(ctx, acc, opts.light, opts.orientation)
             .takeIf { it.hasAny() }?.also { it.start() }
         noise = if (opts.noise) NoiseSampler(ctx, acc).also { it.start(scope) } else null
@@ -60,16 +63,17 @@ class ScanEngine(private val ctx: Context) {
             _progress.value = ScanProgress(running = true, totalSec = durationSec)
             val deadline = System.currentTimeMillis() + durationSec * 1000L
             var tick = 0
+            congestion?.congestion(acc)
             while (isActive && System.currentTimeMillis() < deadline) {
                 val rssi = wifi?.sample(acc)
                 val cellDbm = cell?.sample(acc)
-                // Ping tiap ~2 detik agar jumlah sampel wajar
-                if (ping != null && tick % 2 == 0) launch { ping.pingOnce(acc) }
+                if (ping != null) launch { ping.pingOnce(acc) }
+                val (_, pingsNow, luxNow) = acc.snapshot()
                 val live = LiveMetrics(
                     wifiRssiDbm = rssi,
-                    pingMs = acc.pings.lastOrNull(),
-                    lux = acc.lux.lastOrNull(),
-                    noiseDb = acc.noise.lastOrNull(),
+                    pingMs = pingsNow.lastOrNull(),
+                    lux = luxNow.lastOrNull(),
+                    noiseDb = acc.noiseSnapshot().lastOrNull(),
                     azimuthDeg = acc.azimuthDeg,
                     cellularDbm = cellDbm,
                     wifiBand = acc.wifiBand,
@@ -79,20 +83,23 @@ class ScanEngine(private val ctx: Context) {
                     elapsedSec = ((durationSec * 1000L - (deadline - System.currentTimeMillis())) / 1000)
                         .toInt().coerceIn(0, durationSec),
                     live = live,
+                    luxSeries = luxNow.takeLast(30),
+                    noiseSeries = acc.noiseSnapshot().takeLast(30),
                 )
                 tick++
                 delay(1000)
             }
             _progress.value = _progress.value.copy(live = _progress.value.live, elapsedSec = durationSec)
-            finish(acc, spotLabel, durationSec, mode, onDone)
+            finish(acc, spotLabel, durationSec, mode, opts, onDone)
         }
     }
 
     /** Stop lebih awal — hasil tetap dihitung dari sampel yang terkumpul. */
-    fun stop(spotLabel: String, durationSec: Int, mode: WorkMode, onDone: (SpotResult) -> Unit) {
+    fun stop(spotLabel: String, durationSec: Int, mode: WorkMode,
+             opts: ScanOptions = ScanOptions(), onDone: (SpotResult) -> Unit) {
         val acc = currentAcc ?: return
         job?.cancel()
-        finish(acc, spotLabel, durationSec, mode, onDone)
+        finish(acc, spotLabel, durationSec, mode, opts, onDone)
     }
 
     private var currentAcc: ScanAccumulator? = null
@@ -102,16 +109,19 @@ class ScanEngine(private val ctx: Context) {
         spotLabel: String,
         durationSec: Int,
         mode: WorkMode,
+        opts: ScanOptions,
         onDone: (SpotResult) -> Unit,
     ) {
         ambient?.stop(); ambient = null
         noise?.stop(); noise = null
         job?.cancel(); job = null
 
-        val pings = acc.pings
-        val jitter = if (pings.size >= 2) {
-            pings.zipWithNext { a, b -> kotlin.math.abs(b - a) }.average().toFloat()
-        } else 0f.takeIf { pings.isNotEmpty() }
+        val (_, pings, _) = acc.snapshot()
+        // Jitter = standar deviasi RTT — lebih stabil daripada selisih berurutan.
+        val jitter = pings.stdDevOrNull()
+        // Ping target diisi tapi tak pernah menjawab → unreachable, bukan packet loss biasa.
+        val pingUnreachable = acc.pingAttempts > 0 && pings.isEmpty()
+        val packetLoss = if (pingUnreachable) null else acc.packetLossPct()
 
         val loc = lastKnownLocation(ctx)
         val sunAz = loc?.let { SunPosition.azimuthDeg(System.currentTimeMillis(), it.first, it.second) }
@@ -121,16 +131,20 @@ class ScanEngine(private val ctx: Context) {
         // Jika orientasi dimatikan, azimuth tidak dikumpulkan → metrik jadi null dan
         // ScoreEngine menormalkan ulang bobotnya.
 
+        val (rssiL, pings2, luxL) = acc.snapshot()
+        val noiseL = acc.noiseSnapshot()
         val metrics = SpotMetrics(
-            wifiRssiDbm = acc.rssi.avgOrNullI().takeIf { acc.rssi.isNotEmpty() },
+            wifiRssiDbm = rssiL.avgOrNullI(),
             wifiLinkSpeedMbps = acc.linkSpeed,
             wifiBand = acc.wifiBand,
-            pingAvgMs = pings.avgOrNull(),
+            wifiCongestion = acc.wifiCongestion,
+            pingAvgMs = pings2.avgOrNull(),
             pingJitterMs = jitter,
-            packetLossPct = acc.packetLossPct(),
-            luxAvg = acc.lux.avgOrNull(),
-            luxStdDev = acc.lux.stdDevOrNull(),
-            noiseDbAvg = acc.noise.avgOrNull(),
+            packetLossPct = packetLoss,
+            pingUnreachable = pingUnreachable,
+            luxAvg = luxL.avgOrNull(),
+            luxStdDev = luxL.stdDevOrNull(),
+            noiseDbAvg = noiseL.avgOrNull(),
             azimuthDeg = acc.azimuthDeg,
             lightDirectionDeg = acc.luxAtMaxAzimuth?.second,
             sunAzimuthDeg = sunAz,
@@ -138,8 +152,8 @@ class ScanEngine(private val ctx: Context) {
             cellularDbm = acc.cellularDbm,
             wifiSamples = acc.rssi.size,
             pingSamples = acc.pingAttempts,
-            luxSamples = acc.lux.size,
-            noiseSamples = acc.noise.size,
+            luxSamples = luxL.size,
+            noiseSamples = noiseL.size,
         )
         val (scores, total) = ScoreEngine.scoreSpot(metrics, mode)
         val result = SpotResult(
@@ -149,10 +163,25 @@ class ScanEngine(private val ctx: Context) {
             scores = scores,
             totalScore = total,
             notes = ScoreEngine.notesFor(metrics, scores),
+            confidencePct = confidence(metrics, opts),
         )
         _progress.value = ScanProgress(running = false, totalSec = durationSec)
         currentAcc = null
         onDone(result)
+    }
+
+    /** Keyakinan 0–100: proporsi metrik yang diaktifkan dan berhasil menghasilkan data. */
+    private fun confidence(m: SpotMetrics, o: ScanOptions): Int {
+        var enabled = 0
+        var produced = 0
+        fun need(on: Boolean, ok: Boolean) { if (on) { enabled++; if (ok) produced++ } }
+        need(o.wifi, m.wifiRssiDbm != null)
+        need(o.ping, m.pingAvgMs != null && !m.pingUnreachable)
+        need(o.light, m.luxAvg != null)
+        need(o.noise, m.noiseDbAvg != null)
+        need(o.orientation, m.azimuthDeg != null)
+        need(o.cellular, m.cellularDbm != null)
+        return if (enabled == 0) 0 else produced * 100 / enabled
     }
 
     fun attachAcc(acc: ScanAccumulator) { currentAcc = acc }

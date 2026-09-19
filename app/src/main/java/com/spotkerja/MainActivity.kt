@@ -2,6 +2,7 @@ package com.spotkerja
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.hardware.Sensor
 import android.hardware.SensorManager
 import android.os.Bundle
@@ -13,6 +14,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
@@ -29,8 +31,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -44,33 +49,65 @@ import com.spotkerja.data.ScanSession
 import com.spotkerja.data.WorkMode
 import com.spotkerja.export.ExportFormat
 import com.spotkerja.export.Exporter
+import com.spotkerja.export.InfoColors
+import com.spotkerja.settings.ThemeMode
 import com.spotkerja.ui.HistoryScreen
 import com.spotkerja.ui.HomeScreen
+import com.spotkerja.ui.OnboardingOverlay
 import com.spotkerja.ui.ResultsScreen
 import com.spotkerja.ui.ScanScreen
 import com.spotkerja.ui.SettingsScreen
 import com.spotkerja.ui.theme.LocalPalette
+import com.spotkerja.ui.theme.LocalScoreColor
 import com.spotkerja.ui.theme.SpotkerjaTheme
 import com.spotkerja.vm.AppViewModel
 import com.spotkerja.vm.ScanPhase
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+
+    companion object { const val ACTION_FAST_SCAN = "com.spotwise.app.FAST_SCAN" }
+
+    /** Ditandai saat widget Fast Scan menap; dikonsumsi sekali oleh UI. */
+    private val widgetFastScan = mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         MobileAds.initialize(this)
         Ads.preloadInterstitial(this)
+        widgetFastScan.value = intent?.action == ACTION_FAST_SCAN
         setContent {
             val vm: AppViewModel = viewModel()
             val theme by vm.theme.collectAsState()
             val themeMode by vm.themeMode.collectAsState()
+
+            // Status/nav bar icon mengikuti tema terpilih — fix manual LIGHT
+            // mode di sistem gelap (enableEdgeToEdge hanya baca tema sistem).
+            val dark = when (themeMode) {
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+            }
+            val view = LocalView.current
+            LaunchedEffect(dark) {
+                WindowCompat.getInsetsController(window, view).apply {
+                    isAppearanceLightStatusBars = !dark
+                    isAppearanceLightNavigationBars = !dark
+                }
+            }
+
             SpotkerjaTheme(theme, themeMode) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    SpotkerjaApp(vm)
+                    SpotkerjaApp(vm, widgetFastScan)
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.action == ACTION_FAST_SCAN) widgetFastScan.value = true
     }
 }
 
@@ -94,7 +131,7 @@ private val TABS = listOf(
 )
 
 @Composable
-fun SpotkerjaApp(vm: AppViewModel) {
+fun SpotkerjaApp(vm: AppViewModel, widgetFastScan: MutableState<Boolean>) {
     val nav: NavHostController = rememberNavController()
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -114,7 +151,19 @@ fun SpotkerjaApp(vm: AppViewModel) {
     val scanOptions by vm.scanOptions.collectAsState()
     val fastDuration by vm.fastDurationSec.collectAsState()
     val isFastScan by vm.isFastScan.collectAsState()
+    val onboarded by vm.onboarded.collectAsState()
     var exporting by remember { mutableStateOf(false) }
+
+    val scoreColor = LocalScoreColor.current
+    val infoColors = remember(p) {
+        InfoColors(
+            bg = p.bg.toArgb(), card = p.card.toArgb(), border = p.border.toArgb(),
+            accent = p.accent.toArgb(), accent2 = p.accent2.toArgb(),
+            gold = p.gold.toArgb(), text = p.text.toArgb(), dim = p.textDim.toArgb(),
+            good = scoreColor(80f).toArgb(), mid = scoreColor(60f).toArgb(),
+            bad = scoreColor(10f).toArgb(),
+        )
+    }
 
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
@@ -139,11 +188,25 @@ fun SpotkerjaApp(vm: AppViewModel) {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { }
 
+    // Fast Scan dari home-screen widget — minta izin dulu lalu jalan.
+    LaunchedEffect(widgetFastScan.value) {
+        if (widgetFastScan.value) {
+            widgetFastScan.value = false
+            permLauncher.launch(arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.RECORD_AUDIO,
+            ))
+            vm.fastScanFromWidget()
+            nav.navigate(Routes.SCAN) { launchSingleTop = true }
+        }
+    }
+
     fun export(format: ExportFormat) {
         val s = vm.currentSession ?: return
         exporting = true
         scope.launch {
-            runCatching { Exporter.export(ctx, s, format) }
+            runCatching { Exporter.export(ctx, s, format, infoColors) }
             exporting = false
         }
     }
@@ -305,7 +368,7 @@ fun SpotkerjaApp(vm: AppViewModel) {
                         spots = s.spots,
                         mode = WorkMode.entries.firstOrNull { it.label == s.mode } ?: WorkMode.WORK,
                         onExport = { f ->
-                            scope.launch { Exporter.export(ctx, s, f) }
+                            scope.launch { Exporter.export(ctx, s, f, infoColors) }
                         },
                         onNewScan = {
                             vm.reset()
@@ -315,6 +378,9 @@ fun SpotkerjaApp(vm: AppViewModel) {
                     )
                 }
             }
+        }
+        if (!onboarded) {
+            OnboardingOverlay(onDone = vm::markOnboarded)
         }
         }
     }

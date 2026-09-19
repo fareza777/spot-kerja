@@ -12,6 +12,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,7 +24,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.spotkerja.data.ScanSession
+import com.spotkerja.data.WorkMode
 import com.spotkerja.ui.components.GlassCard
+import com.spotkerja.ui.components.Sparkline
 import com.spotkerja.ui.theme.*
 import java.time.Instant
 import java.time.LocalDate
@@ -40,6 +44,8 @@ fun HistoryScreen(
     val p = LocalPalette.current
     var month by remember { mutableStateOf(YearMonth.now()) }
     var selectedDay by remember { mutableStateOf<LocalDate?>(null) }
+    var query by remember { mutableStateOf("") }
+    var modeFilter by remember { mutableStateOf<WorkMode?>(null) }
 
     // Set of days that have scans (for dot markers)
     val daysWithScans = remember(sessions, month) {
@@ -48,13 +54,30 @@ fun HistoryScreen(
         }.toSet()
     }
 
-    val daySessions = remember(sessions, selectedDay) {
-        selectedDay?.let { d ->
+    val daySessions = remember(sessions, selectedDay, query, modeFilter) {
+        var list = selectedDay?.let { d ->
             sessions.filter {
                 Instant.ofEpochMilli(it.createdAtEpochMs)
                     .atZone(ZoneId.systemDefault()).toLocalDate() == d
             }
         } ?: sessions
+        modeFilter?.let { mf -> list = list.filter { it.mode == mf.name } }
+        if (query.isNotBlank()) {
+            val q = query.trim().lowercase()
+            list = list.filter { s ->
+                s.spots.any { it.label.lowercase().contains(q) }
+            }
+        }
+        list
+    }
+
+    // Trend per nama spot: skor spot yang sama lintas sesi, urut waktu.
+    val spotTrends = remember(sessions) {
+        sessions.sortedBy { it.createdAtEpochMs }
+            .flatMap { s -> s.spots.map { it.label to it.totalScore } }
+            .groupBy({ it.first }, { it.second })
+            .filter { it.value.size >= 2 }
+            .toList().sortedByDescending { it.second.size }.take(4)
     }
 
     LazyColumn(
@@ -67,6 +90,71 @@ fun HistoryScreen(
                 fontWeight = FontWeight.Bold)
             Text("Tap a day to filter", style = MaterialTheme.typography.bodySmall,
                 color = p.textDim)
+        }
+
+        item {
+            OutlinedTextField(
+                value = query, onValueChange = { query = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Search spot names…", color = p.textDim) },
+                leadingIcon = { Icon(Icons.Default.Search, null, tint = p.textDim) },
+                trailingIcon = {
+                    if (query.isNotEmpty()) {
+                        TextButton(onClick = { query = "" }) { Text("Clear") }
+                    }
+                },
+                singleLine = true, shape = RoundedCornerShape(16.dp),
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FilterChip(
+                    selected = modeFilter == null, onClick = { modeFilter = null },
+                    label = { Text("All") },
+                )
+                WorkMode.entries.forEach { m ->
+                    FilterChip(
+                        selected = modeFilter == m, onClick = {
+                            modeFilter = if (modeFilter == m) null else m },
+                        label = { Text(m.label, maxLines = 1) },
+                    )
+                }
+            }
+        }
+
+        if (spotTrends.isNotEmpty()) {
+            item {
+                GlassCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("Spot trends", style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold)
+                        Text("Same spot name, over time", color = p.textDim,
+                            style = MaterialTheme.typography.labelSmall)
+                        Spacer(Modifier.height(12.dp))
+                        spotTrends.forEach { (label, scores) ->
+                            Row(verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(vertical = 4.dp)) {
+                                Column(Modifier.width(110.dp)) {
+                                    Text(label, maxLines = 1,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold)
+                                    Text("${scores.size}× • best %.0f".format(scores.max()),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = p.textDim)
+                                }
+                                Sparkline(scores, Modifier.weight(1f))
+                                Text("%.0f".format(scores.last()),
+                                    Modifier.width(34.dp), textAlign = TextAlign.End,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = LocalScoreColor.current(scores.last()))
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         item {
@@ -119,12 +207,22 @@ fun HistoryScreen(
 
         if (daySessions.isEmpty()) {
             item {
-                Box(Modifier.fillMaxWidth().padding(vertical = 30.dp),
-                    contentAlignment = Alignment.Center) {
+                Column(
+                    Modifier.fillMaxWidth().padding(vertical = 36.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Icon(Icons.Default.History, null,
+                        Modifier.size(44.dp), tint = p.textDim)
+                    Spacer(Modifier.height(10.dp))
                     Text(
-                        if (selectedDay == null) "No scans yet — start your first one."
-                        else "No scans this day.",
-                        color = p.textDim,
+                        when {
+                            selectedDay == null && sessions.isEmpty() ->
+                                "No scans yet — run your first scan."
+                            query.isNotBlank() || modeFilter != null ->
+                                "Nothing matches this filter."
+                            else -> "No scans this day."
+                        },
+                        color = p.textDim, textAlign = TextAlign.Center,
                     )
                 }
             }

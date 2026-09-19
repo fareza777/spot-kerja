@@ -57,6 +57,8 @@ class ScanAccumulator {
     var cellularDbm: Int? = null
     var luxAtMaxAzimuth: Pair<Float, Float>? = null // lux to azimuth pairing
     var lastAzimuth: Float? = null
+    var wifiCongestion: Int? = null
+    var pingTargetMissing: Boolean = false
 
     @Synchronized fun addRssi(v: Int) { rssi += v }
     @Synchronized fun addPing(v: Float?) { pingAttempts++; v?.let { pings += it } }
@@ -71,6 +73,9 @@ class ScanAccumulator {
 
     @Synchronized fun packetLossPct(): Float? =
         if (pingAttempts == 0) null else (pingAttempts - pings.size) * 100f / pingAttempts
+
+    @Synchronized fun snapshot() = Triple(rssi.toList(), pings.toList(), lux.toList())
+    @Synchronized fun noiseSnapshot() = noise.toList()
 }
 
 fun List<Float>.avgOrNull() = if (isEmpty()) null else sum() / size
@@ -118,10 +123,11 @@ class PingSampler(private val ctx: Context, private val host: String? = null) {
         return "%d.%d.%d.%d".format(gw and 0xff, gw shr 8 and 0xff, gw shr 16 and 0xff, gw shr 24 and 0xff)
     }
 
-    /** Satu ping via binary /system/bin/ping; return RTT ms atau null (loss). */
+    /** Satu ping via binary /system/bin/ping; return RTT ms atau null (loss).
+     *  Jika tidak ada target sama sekali, attempt tidak dihitung (bukan loss). */
     suspend fun pingOnce(acc: ScanAccumulator): Float? = withContext(Dispatchers.IO) {
         val t = target()
-        if (t == null) { acc.addPing(null); return@withContext null }
+        if (t == null) return@withContext null
         val rtt = runCatching {
             val p = ProcessBuilder("/system/bin/ping", "-c", "1", "-W", "2", t)
                 .redirectErrorStream(true).start()
@@ -221,7 +227,30 @@ class NoiseSampler(private val ctx: Context, private val acc: ScanAccumulator) {
     }
 }
 
-/** Sinyal seluler (opsional): level dBm terbaik dari daftar cell. */
+/** Crowding Wi-Fi: jumlah AP lain pada kanal/band yang sama (perlu izin lokasi). */
+class WifiScanSampler(private val ctx: Context) {
+    private val wifi = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+
+    /** Satu scan pass — panggil sekali di awal scan spot (hasil async tapi cache cukup). */
+    fun congestion(acc: ScanAccumulator): Int? {
+        val granted = ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!granted) return null
+        val w = wifi ?: return null
+        @SuppressLint("MissingPermission")
+        val results = runCatching {
+            w.startScan()
+            w.scanResults
+        }.getOrNull() ?: return null
+        val mine = runCatching { w.connectionInfo }.getOrNull() ?: return null
+        val myFreq = if (android.os.Build.VERSION.SDK_INT >= 30) mine.frequency else -1
+        if (myFreq <= 0) return null
+        // Hitung AP lain dalam ±30 MHz dari frekuensi sendiri — indikasi kanal padat.
+        val others = results.count { it.BSSID != mine.bssid && kotlin.math.abs(it.frequency - myFreq) <= 30 }
+        acc.wifiCongestion = others
+        return others
+    }
+}
 class CellSampler(private val ctx: Context) {
     private val tm = ctx.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
 
@@ -236,8 +265,9 @@ class CellSampler(private val ctx: Context) {
     }
 }
 
-/** Posisi kasar (untuk azimuth matahari) — last known location, tanpa request baru. */
-fun lastKnownLocation(ctx: Context): Pair<Double, Double>? {
+/** Posisi kasar (untuk azimuth matahari) — last known location, maks 24 jam.
+ *  Lebih tua dari itu dianggap tidak andal → orientasi diskip daripada salah arah. */
+fun lastKnownLocation(ctx: Context, maxAgeMs: Long = 24L * 60 * 60 * 1000): Pair<Double, Double>? {
     val lm = ctx.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
     val granted = ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) ==
         PackageManager.PERMISSION_GRANTED ||
@@ -247,6 +277,7 @@ fun lastKnownLocation(ctx: Context): Pair<Double, Double>? {
     @SuppressLint("MissingPermission")
     val loc = runCatching {
         lm.getProviders(true).mapNotNull { lm.getLastKnownLocation(it) }
+            .filter { System.currentTimeMillis() - it.time < maxAgeMs }
             .maxByOrNull { it.time }
     }.getOrNull() ?: return null
     return loc?.let { it.latitude to it.longitude }

@@ -2,10 +2,12 @@ package com.spotkerja.settings
 
 import android.content.Context
 import com.spotkerja.ui.theme.ThemeOption
+import kotlinx.serialization.Serializable
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 /** Which sensors/metrics a scan collects — user-customizable. */
+@Serializable
 data class ScanOptions(
     val wifi: Boolean = true,
     val ping: Boolean = true,
@@ -48,6 +50,10 @@ class SettingsStore(ctx: Context) {
 
     fun setSpotName(index: Int, name: String) =
         prefs.edit().putString("spotName_$index", name.trim().ifEmpty { null }).apply()
+
+    var onboarded: Boolean
+        get() = prefs.getBoolean("onboarded", false)
+        set(v) = prefs.edit().putBoolean("onboarded", v).apply()
 
     var adsEnabled: Boolean
         get() = prefs.getBoolean("ads", true)
