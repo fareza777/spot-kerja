@@ -26,6 +26,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.spotkerja.data.ScoreEngine
 import com.spotkerja.data.SpotResult
+import com.spotkerja.data.SunPosition
 import com.spotkerja.data.WorkMode
 import com.spotkerja.export.ExportFormat
 import com.spotkerja.ui.components.*
@@ -307,7 +308,10 @@ private fun SpotDetailCard(spot: SpotResult, rank: Int) {
                         MetricBar("Orientation", s.orientation,
                             when {
                                 m.glareRisk == true -> "glare risk"
-                                m.sunAzimuthDeg != null -> "ok"
+                                m.azimuthDeg != null && m.lightDirectionDeg != null &&
+                                    SunPosition.angularDiff(m.azimuthDeg!!,
+                                        m.lightDirectionDeg!!) < 45f -> "facing light"
+                                s.orientation != null -> "ok"
                                 else -> "—"
                             })
                         MetricBar("Cellular", s.cellular, m.cellularDbm?.let { "$it dBm" } ?: "—")

@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -192,7 +193,7 @@ fun SpotkerjaApp(vm: AppViewModel, widgetFastScan: MutableState<Boolean>) {
 
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
-    val showBottomBar = route in TABS.map { it.route }
+    val showBottomBar = route in TABS.map { it.route } && onboarded
 
     LaunchedEffect(phase) {
         if (phase == ScanPhase.RESULTS && route == Routes.SCAN) {
@@ -410,8 +411,9 @@ private fun FloatingNavBar(current: String?, onSelect: (String) -> Unit) {
     val haptics = LocalHapticFeedback.current
     Surface(
         Modifier.fillMaxWidth()
+            .navigationBarsPadding()
             .padding(horizontal = 18.dp)
-            .padding(bottom = 14.dp),
+            .padding(bottom = 12.dp),
         shape = RoundedCornerShape(26.dp),
         color = p.card,
         border = BorderStroke(1.dp, p.border),

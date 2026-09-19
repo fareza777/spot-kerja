@@ -68,7 +68,9 @@ fun OnboardingOverlay(onDone: () -> Unit) {
     val p = LocalPalette.current
     val pager = rememberPagerState(pageCount = { PAGES.size })
     val scope = rememberCoroutineScope()
-    val last = pager.currentPage == PAGES.size - 1
+    // settledPage: halaman yang benar-benar diam — currentPage bisa sesaat
+    // membaca halaman tetangga saat swipe cepat (tombol tampak "nyangkut").
+    val last = pager.settledPage == PAGES.size - 1
 
     Box(Modifier.fillMaxSize().background(p.bg)) {
         // ambient glow
@@ -80,7 +82,10 @@ fun OnboardingOverlay(onDone: () -> Unit) {
         )
 
         Column(
-            Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 16.dp),
+            Modifier.fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 28.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -113,9 +118,10 @@ fun OnboardingOverlay(onDone: () -> Unit) {
 
             Button(
                 onClick = {
-                    if (last) onDone()
+                    if (pager.settledPage >= PAGES.size - 1) onDone()
                     else scope.launch {
-                        pager.animateScrollToPage(pager.currentPage + 1)
+                        pager.animateScrollToPage(
+                            (pager.currentPage + 1).coerceAtMost(PAGES.size - 1))
                     }
                 },
                 Modifier.fillMaxWidth().height(54.dp),

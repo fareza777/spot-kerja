@@ -95,17 +95,29 @@ object ScoreEngine {
         sunAzimuthDeg: Float?,
         lightDirectionDeg: Float? = null,
     ): Float? {
-        if (sunAzimuthDeg == null || azimuthDeg == null) return null
-        val diff = SunPosition.angularDiff(azimuthDeg, sunAzimuthDeg)
-        var score = when {
-            diff < 30f -> 35f
-            diff < 60f -> 55f
-            diff < 120f -> 80f
-            else -> 95f
+        if (azimuthDeg == null) return null
+        var score: Float? = null
+        if (sunAzimuthDeg != null) {
+            val diff = SunPosition.angularDiff(azimuthDeg, sunAzimuthDeg)
+            score = when {
+                diff < 30f -> 35f
+                diff < 60f -> 55f
+                diff < 120f -> 80f
+                else -> 95f
+            }
         }
-        // Menghadap arah sumber cahaya terkuat yang terukur → cahaya muka lebih baik.
-        if (lightDirectionDeg != null && SunPosition.angularDiff(azimuthDeg, lightDirectionDeg) < 45f) {
-            score = min(100f, score + 5f)
+        if (lightDirectionDeg != null) {
+            // Menghadap arah sumber cahaya terkuat yang terukur → cahaya muka
+            // lebih baik; jadi basis penilaian bila posisi matahari tak tersedia
+            // (lokasi dimatikan / izin lokasi ditolak).
+            val ld = SunPosition.angularDiff(azimuthDeg, lightDirectionDeg)
+            val lightScore = when {
+                ld < 30f -> 70f
+                ld < 60f -> 80f
+                ld < 120f -> 88f
+                else -> 92f
+            }
+            score = score?.let { if (ld < 45f) min(100f, it + 5f) else it } ?: lightScore
         }
         return score
     }
