@@ -11,6 +11,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -100,7 +104,13 @@ fun SpotkerjaApp(vm: AppViewModel = viewModel()) {
         action()
     }
 
-    NavHost(nav, startDestination = Routes.HOME) {
+    NavHost(
+        nav, startDestination = Routes.HOME,
+        enterTransition = { slideInHorizontally { it / 3 } + fadeIn() },
+        exitTransition = { fadeOut() },
+        popEnterTransition = { fadeIn() },
+        popExitTransition = { slideOutHorizontally { it / 3 } + fadeOut() },
+    ) {
         composable(Routes.HOME) {
             HomeScreen(
                 mode = mode,
