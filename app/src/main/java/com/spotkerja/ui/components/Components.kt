@@ -453,27 +453,13 @@ fun ShimmerBand(modifier: Modifier = Modifier) {
     }
 }
 
-/** Consistent section header — accent tick + letterspaced caps label. */
+/** Consistent section header. */
 @Composable
 fun SectionHeader(title: String, modifier: Modifier = Modifier, trailing: (@Composable () -> Unit)? = null) {
-    val p = LocalPalette.current
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            Modifier.width(4.dp).height(15.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(Brush.verticalGradient(listOf(p.accent, p.accent2))),
-        )
-        Spacer(Modifier.width(9.dp))
-        Text(
-            title.uppercase(),
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.1.sp,
-            color = p.textDim,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
+        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
+            maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f))
         trailing?.invoke()
     }
 }

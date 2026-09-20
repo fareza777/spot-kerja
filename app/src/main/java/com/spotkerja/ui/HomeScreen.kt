@@ -27,7 +27,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -85,18 +84,7 @@ fun HomeScreen(
     ) {
         item {
             RiseIn(0) {
-            // Hero card — layered gradient, decorative rings, breathing icon.
-            val breath = rememberInfiniteTransition(label = "hero")
-            val iconPulse by breath.animateFloat(
-                1f, 1.07f,
-                infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing),
-                    RepeatMode.Reverse),
-                label = "iconPulse")
-            val drift by breath.animateFloat(
-                0f, 360f,
-                infiniteRepeatable(tween(22000, easing = LinearEasing)),
-                label = "ringDrift")
-
+            // Hero card — layered gradient, decorative static rings.
             Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp),
                 border = BorderStroke(1.dp, p.accent.copy(alpha = 0.22f))) {
                 Box {
@@ -108,23 +96,21 @@ fun HomeScreen(
                         Modifier.align(Alignment.TopEnd).size(170.dp)
                     ) {
                         val c = Offset(size.width * 0.82f, size.height * 0.10f)
-                        rotate(drift, c) {
-                            listOf(0.5f, 0.75f, 1f).forEach { f ->
-                                drawArc(
-                                    p.accent.copy(alpha = 0.10f * (1.3f - f)),
-                                    -90f, 300f, false,
-                                    topLeft = Offset(c.x - 130 * f, c.y - 130 * f),
-                                    size = Size(260 * f, 260 * f),
-                                    style = Stroke(1.2.dp.toPx()),
-                                )
-                            }
+                        listOf(0.5f, 0.75f, 1f).forEach { f ->
+                            drawArc(
+                                p.accent.copy(alpha = 0.10f * (1.3f - f)),
+                                -90f, 300f, false,
+                                topLeft = Offset(c.x - 130 * f, c.y - 130 * f),
+                                size = Size(260 * f, 260 * f),
+                                style = Stroke(1.2.dp.toPx()),
+                            )
                         }
                     }
                     Column(Modifier.padding(24.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(contentAlignment = Alignment.Center) {
                                 Box(
-                                    Modifier.size(54.dp * iconPulse)
+                                    Modifier.size(54.dp)
                                         .clip(RoundedCornerShape(17.dp))
                                         .background(p.accent.copy(alpha = 0.14f)),
                                 )
@@ -213,8 +199,6 @@ fun HomeScreen(
 
         item {
             RiseIn(2) {
-            SectionHeader("Evaluation mode")
-            Spacer(Modifier.height(10.dp))
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 WorkMode.entries.chunked(2).forEach { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
