@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.spotkerja.data.Analysis
 import com.spotkerja.data.ScoreEngine
 import com.spotkerja.data.SpotResult
 import com.spotkerja.data.SunPosition
@@ -106,6 +107,43 @@ fun ResultsScreen(
             }
         }
 
+        // Verdict untuk mode yang dipilih — menjelaskan apa arti skor best spot.
+        best?.let { b ->
+            item {
+                val analysis = remember(b, mode) { Analysis.forMode(mode, b) }
+                SectionHeader("Analysis — ${mode.label} mode")
+                Spacer(Modifier.height(10.dp))
+                GlassCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(18.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Psychology, null, Modifier.size(20.dp),
+                                tint = p.accent)
+                            Spacer(Modifier.width(8.dp))
+                            Text(analysis.headline,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.ExtraBold, color = p.accent)
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(analysis.summary, style = MaterialTheme.typography.bodySmall,
+                            color = p.textDim)
+                        if (analysis.bullets.isNotEmpty()) {
+                            Spacer(Modifier.height(10.dp))
+                            analysis.bullets.forEach {
+                                Row(Modifier.padding(vertical = 3.dp)) {
+                                    Icon(Icons.Default.ChevronRight, null,
+                                        Modifier.size(14.dp).padding(top = 2.dp),
+                                        tint = p.accentDim)
+                                    Spacer(Modifier.width(5.dp))
+                                    Text(it, style = MaterialTheme.typography.bodySmall,
+                                        color = p.text)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         item {
             SectionHeader("Score comparison")
             Spacer(Modifier.height(10.dp))
@@ -119,11 +157,11 @@ fun ResultsScreen(
         // Radar overlay metrik per-spot (maks 3 teratas). Sumbu yang tidak
         // punya data sama sekali (semua spot null) tidak ditampilkan.
         val allAxes = listOf("Wi-Fi", "Ping", "Jitter", "Loss", "Light",
-            "Noise", "Facing", "Cell", "Crowd")
+            "Noise", "Facing", "Cell")
         val allSeries = sorted.take(3).map { s ->
             s.label to listOf(s.scores.wifi, s.scores.ping, s.scores.jitter,
                 s.scores.packetLoss, s.scores.light, s.scores.noise,
-                s.scores.orientation, s.scores.cellular, s.scores.wifiCongestion)
+                s.scores.orientation, s.scores.cellular)
         }
         val usedIdx = allAxes.indices.filter { i ->
             allSeries.any { (_, vals) -> vals[i] != null }
@@ -315,8 +353,6 @@ private fun SpotDetailCard(spot: SpotResult, rank: Int) {
                                 else -> "—"
                             })
                         MetricBar("Cellular", s.cellular, m.cellularDbm?.let { "$it dBm" } ?: "—")
-                        MetricBar("Wi-Fi crowding", s.wifiCongestion,
-                            m.wifiCongestion?.let { "$it APs nearby" } ?: "—")
                     }
                     if (spot.notes.isNotEmpty()) {
                         Spacer(Modifier.height(14.dp))

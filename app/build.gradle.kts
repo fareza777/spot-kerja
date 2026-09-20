@@ -20,8 +20,8 @@ android {
         applicationId = "com.spotwise.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "2.3.1"
+        versionCode = 8
+        versionName = "2.4.0"
     }
 
     signingConfigs {

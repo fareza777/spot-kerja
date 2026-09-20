@@ -15,22 +15,22 @@ object ScoreEngine {
         WorkMode.WORK -> MetricWeights(
             wifi = 0.17f, ping = 0.10f, jitter = 0.05f, packetLoss = 0.10f,
             light = 0.22f, noise = 0.23f, orientation = 0.05f, cellular = 0.05f,
-            wifiCongestion = 0.05f,
+            wifiCongestion = 0f,
         )
         WorkMode.STUDY -> MetricWeights(
             wifi = 0.10f, ping = 0.04f, jitter = 0.02f, packetLoss = 0.05f,
             light = 0.35f, noise = 0.34f, orientation = 0.03f, cellular = 0.05f,
-            wifiCongestion = 0.03f,
+            wifiCongestion = 0f,
         )
         WorkMode.GAMING -> MetricWeights(
             wifi = 0.15f, ping = 0.25f, jitter = 0.18f, packetLoss = 0.22f,
             light = 0.05f, noise = 0.05f, orientation = 0.00f, cellular = 0.05f,
-            wifiCongestion = 0.08f,
+            wifiCongestion = 0f,
         )
         WorkMode.VIDEO_CALL -> MetricWeights(
             wifi = 0.18f, ping = 0.15f, jitter = 0.13f, packetLoss = 0.15f,
             light = 0.18f, noise = 0.10f, orientation = 0.04f, cellular = 0.03f,
-            wifiCongestion = 0.04f,
+            wifiCongestion = 0f,
         )
     }
 
@@ -169,7 +169,6 @@ object ScoreEngine {
     fun notesFor(metrics: SpotMetrics, scores: MetricScores): List<String> {
         val notes = mutableListOf<String>()
         if (metrics.pingUnreachable) notes += "Ping target unreachable — check the host/Wi-Fi"
-        metrics.wifiCongestion?.let { if (it >= 8) notes += "Wi-Fi channel crowded ($it networks nearby)" }
         metrics.lightDirectionDeg?.let { dir ->
             metrics.azimuthDeg?.let { az ->
                 if (SunPosition.angularDiff(az, dir) < 45f)

@@ -33,6 +33,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.spotkerja.data.ScanSession
 import com.spotkerja.data.WorkMode
@@ -71,6 +72,7 @@ fun HomeScreen(
     onOpenSession: (ScanSession) -> Unit,
     presets: List<ScanPreset> = emptyList(),
     onApplyPreset: (ScanPreset) -> Unit = {},
+    bannerAd: (@Composable () -> Unit)? = null,
 ) {
     val haptics = LocalHapticFeedback.current
     val p = LocalPalette.current
@@ -196,7 +198,8 @@ fun HomeScreen(
                         ) {
                             Column(Modifier.padding(horizontal = 14.dp, vertical = 9.dp)) {
                                 Text(preset.name, fontWeight = FontWeight.SemiBold,
-                                    style = MaterialTheme.typography.labelLarge, color = p.text)
+                                    style = MaterialTheme.typography.labelLarge, color = p.text,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text("${preset.durationSec}s • ${preset.spotCount} spots",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = p.textDim)
@@ -341,7 +344,8 @@ fun HomeScreen(
                                     Spacer(Modifier.width(8.dp))
                                     Text(name, fontWeight = FontWeight.SemiBold,
                                         style = MaterialTheme.typography.labelLarge,
-                                        color = p.text)
+                                        color = p.text, maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis)
                                     Spacer(Modifier.width(6.dp))
                                     Icon(Icons.Default.Edit, "Rename", Modifier.size(11.dp),
                                         tint = p.textDim)
@@ -466,6 +470,8 @@ fun HomeScreen(
                 )
             }
         }
+
+        bannerAd?.let { item { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { it() } } }
     }
 
     editingSpot?.let { idx ->
@@ -664,6 +670,7 @@ fun HistoryRow(
                         (session.bestSpotLabel?.let { " • best: $it" } ?: ""),
                     style = MaterialTheme.typography.bodySmall,
                     color = p.textDim,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
             }
             session.spots.maxByOrNull { it.totalScore }?.let {

@@ -311,6 +311,11 @@ fun SpotkerjaApp(vm: AppViewModel, widgetFastScan: MutableState<Boolean>) {
                     onOpenSession = { s -> nav.navigate(Routes.session(s.id)) },
                     presets = presets,
                     onApplyPreset = vm::applyPreset,
+                    bannerAd = if (adsEnabled) ({
+                        BannerAd(Modifier
+                            .fillMaxWidth()
+                            .wrapContentHeight())
+                    }) else null,
                 )
             }
             composable(Routes.SCAN) {
@@ -353,6 +358,11 @@ fun SpotkerjaApp(vm: AppViewModel, widgetFastScan: MutableState<Boolean>) {
                     sessions = history,
                     onOpen = { s -> nav.navigate(Routes.session(s.id)) },
                     onDelete = vm::deleteSession,
+                    bannerAd = if (adsEnabled) ({
+                        BannerAd(Modifier
+                            .fillMaxWidth()
+                            .wrapContentHeight())
+                    }) else null,
                 )
             }
             composable(Routes.SETTINGS) {

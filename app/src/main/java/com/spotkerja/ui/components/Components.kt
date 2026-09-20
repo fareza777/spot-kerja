@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.spotkerja.ui.theme.LocalPalette
@@ -452,12 +453,27 @@ fun ShimmerBand(modifier: Modifier = Modifier) {
     }
 }
 
-/** Consistent section header. */
+/** Consistent section header — accent tick + letterspaced caps label. */
 @Composable
 fun SectionHeader(title: String, modifier: Modifier = Modifier, trailing: (@Composable () -> Unit)? = null) {
+    val p = LocalPalette.current
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
-            modifier = Modifier.weight(1f))
+        Box(
+            Modifier.width(4.dp).height(15.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(Brush.verticalGradient(listOf(p.accent, p.accent2))),
+        )
+        Spacer(Modifier.width(9.dp))
+        Text(
+            title.uppercase(),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.1.sp,
+            color = p.textDim,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
         trailing?.invoke()
     }
 }

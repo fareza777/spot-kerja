@@ -40,6 +40,7 @@ fun HistoryScreen(
     sessions: List<ScanSession>,
     onOpen: (ScanSession) -> Unit,
     onDelete: (String) -> Unit,
+    bannerAd: (@Composable () -> Unit)? = null,
 ) {
     val p = LocalPalette.current
     var month by remember { mutableStateOf(YearMonth.now()) }
@@ -235,6 +236,8 @@ fun HistoryScreen(
                 })
             }
         }
+
+        bannerAd?.let { item { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { it() } } }
     }
 }
 
