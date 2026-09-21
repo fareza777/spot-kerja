@@ -60,8 +60,57 @@ class ScanAccumulator {
     var wifiCongestion: Int? = null
     var pingTargetMissing: Boolean = false
 
+    // --- Mesh / radio ---
+    var ssid: String? = null
+    var bssid: String? = null
+    var channelWidthMhz: Int? = null
+    var meshApCount: Int? = null
+    var roamCount: Int = 0
+    private var lastBssid: String? = null
+    var txLink: Int? = null
+    var rxLink: Int? = null
+    var internetState: String? = null
+    private val _routeHops = mutableListOf<String>()
+    val routeHops: List<String> get() = synchronized(_routeHops) { _routeHops.toList() }
+    var routeTarget: String? = null
+    fun setHops(h: List<String>) = synchronized(_routeHops) { _routeHops.clear(); _routeHops.addAll(h) }
+    fun addHop(h: String) = synchronized(_routeHops) { _routeHops += h }
+
+    // --- Sound events ---
+    val soundCounts = mutableMapOf<String, Int>()
+
+    // --- Environment ---
+    var pressureHpa: Float? = null
+    var humidityPct: Float? = null
+    var ambientTempC: Float? = null
+    var magneticUt: Float? = null
+    private var stepBase: Float? = null
+    var stepsDuringScan: Int? = null
+    var sensorsFound: List<String> = emptyList()
+
     @Synchronized fun addRssi(v: Int) { rssi += v }
     @Synchronized fun addPing(v: Float?) { pingAttempts++; v?.let { pings += it } }
+
+    /** Perubahan BSSID saat scan = roaming antar AP mesh. */
+    @Synchronized fun trackBssid(b: String?) {
+        if (b == null || b == "02:00:00:00:00:00") return
+        if (lastBssid != null && lastBssid != b) roamCount++
+        lastBssid = b
+        bssid = b
+    }
+
+    @Synchronized fun addSound(label: String) {
+        soundCounts[label] = (soundCounts[label] ?: 0) + 1
+    }
+
+    @Synchronized fun onStepCounter(v: Float) {
+        if (stepBase == null) stepBase = v
+        stepsDuringScan = (v - (stepBase ?: v)).toInt()
+    }
+
+    @Synchronized fun topSounds(n: Int = 3): List<String> =
+        soundCounts.entries.sortedByDescending { it.value }.take(n).map { it.key }
+
     @Synchronized fun addLux(v: Float) {
         lux += v
         lastAzimuth?.let { az -> if (luxAtMaxAzimuth == null || v > luxAtMaxAzimuth!!.first) luxAtMaxAzimuth = v to az }
@@ -105,6 +154,14 @@ class WifiSampler(private val ctx: Context) {
                 }
             } else null
             acc.setLink(info.linkSpeed.takeIf { it > 0 }, band)
+            // Mesh tracking: SSID + BSSID + link speed TX/RX (API 29+).
+            acc.ssid = info.ssid?.removePrefix("\"")?.removeSuffix("\"")
+                ?.takeIf { it.isNotBlank() && it != "<unknown ssid>" }
+            acc.trackBssid(info.bssid)
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                acc.txLink = info.txLinkSpeedMbps.takeIf { it > 0 }
+                acc.rxLink = info.rxLinkSpeedMbps.takeIf { it > 0 }
+            }
         }
         return rssi
     }
@@ -113,7 +170,7 @@ class WifiSampler(private val ctx: Context) {
 /** Ping ke host terkonfigurasi (default: gateway Wi-Fi — tetap bekerja tanpa internet). */
 class PingSampler(private val ctx: Context, private val host: String? = null) {
 
-    private fun target(): String? = host?.takeIf { it.isNotBlank() } ?: gatewayIp()
+    fun target(): String? = host?.takeIf { it.isNotBlank() } ?: gatewayIp()
 
     fun gatewayIp(): String? {
         val wifi = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
@@ -183,8 +240,10 @@ class AmbientSampler(
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 }
 
-/** Sampler noise via mikrofon — dBFS dikonversi ke level relatif (estimasi). */
-class NoiseSampler(private val ctx: Context, private val acc: ScanAccumulator) {
+/** Sampler noise via mikrofon — dBFS dikonversi ke level relatif (estimasi).
+ *  PCM yang sama ikut diumpankan ke SoundClassifier bila tersedia. */
+class NoiseSampler(private val ctx: Context, private val acc: ScanAccumulator,
+                   private val classifier: SoundClassifier? = null) {
     private var record: AudioRecord? = null
     private var job: Job? = null
 
@@ -214,6 +273,7 @@ class NoiseSampler(private val ctx: Context, private val acc: ScanAccumulator) {
                     val dbfs = if (rms > 0) 20 * log10(rms / 32767.0) else -100.0
                     // dBFS(-60..-10) → level relatif ~30..80. Estimasi, bukan SPL terkalibrasi.
                     acc.addNoise((dbfs + 90).toFloat().coerceIn(0f, 120f))
+                    classifier?.onPcm(buf, n, acc)
                 }
                 delay(50)
             }
@@ -231,8 +291,9 @@ class NoiseSampler(private val ctx: Context, private val acc: ScanAccumulator) {
 class WifiScanSampler(private val ctx: Context) {
     private val wifi = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
 
-    /** Satu scan pass — panggil sekali di awal scan spot (hasil async tapi cache cukup). */
-    fun congestion(acc: ScanAccumulator): Int? {
+    /** Satu scan pass — panggil sekali di awal scan spot (hasil async tapi cache cukup).
+     *  Juga mengumpulkan detail radio: kanal lebar, AP mesh dengan SSID sama. */
+    fun radio(acc: ScanAccumulator): Int? {
         val granted = ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
         if (!granted) return null
@@ -245,11 +306,143 @@ class WifiScanSampler(private val ctx: Context) {
         val mine = runCatching { w.connectionInfo }.getOrNull() ?: return null
         val myFreq = if (android.os.Build.VERSION.SDK_INT >= 30) mine.frequency else -1
         if (myFreq <= 0) return null
-        // Hitung AP lain dalam ±30 MHz dari frekuensi sendiri — indikasi kanal padat.
-        val others = results.count { it.BSSID != mine.bssid && kotlin.math.abs(it.frequency - myFreq) <= 30 }
-        acc.wifiCongestion = others
-        return others
+        // Kanal padat: AP lain dalam ±30 MHz dari frekuensi sendiri.
+        acc.wifiCongestion = results.count {
+            it.BSSID != mine.bssid && kotlin.math.abs(it.frequency - myFreq) <= 30
+        }
+        // Mesh: BSSID lain yang menyiarkan SSID yang sama.
+        val mySsid = mine.ssid?.removePrefix("\"")?.removeSuffix("\"")
+        if (!mySsid.isNullOrBlank() && mySsid != "<unknown ssid>") {
+            acc.meshApCount = results.count {
+                it.BSSID != mine.bssid && it.SSID == mySsid
+            }
+        }
+        // Lebar kanal dari ScanResult milik BSSID yang sedang terhubung.
+        results.firstOrNull { it.BSSID == mine.bssid }?.let { sr ->
+            acc.channelWidthMhz = when (sr.channelWidth) {
+                android.net.wifi.ScanResult.CHANNEL_WIDTH_20MHZ -> 20
+                android.net.wifi.ScanResult.CHANNEL_WIDTH_40MHZ -> 40
+                android.net.wifi.ScanResult.CHANNEL_WIDTH_80MHZ -> 80
+                android.net.wifi.ScanResult.CHANNEL_WIDTH_160MHZ -> 160
+                android.net.wifi.ScanResult.CHANNEL_WIDTH_80MHZ_PLUS_MHZ -> 160
+                else -> null
+            }
+        }
+        return acc.wifiCongestion
     }
+}
+
+/** Internet readiness: divalidasi sistem / captive portal / terbatas / mati. */
+class InternetChecker(private val ctx: Context) {
+    fun check(acc: ScanAccumulator): String? {
+        val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return null
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork)
+        val state = when {
+            caps == null -> "none"
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL) -> "captive"
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) -> "ok"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "limited"
+            else -> "none"
+        }
+        acc.internetState = state
+        return state
+    }
+}
+
+/** Traceroute murah: ping dengan TTL menaik, parse balasan ICMP TTL-exceeded.
+ *  Berjalan sekali per scan di thread IO — bukan untuk UI live. */
+class RouteTracer {
+    suspend fun trace(acc: ScanAccumulator, target: String?) = withContext(Dispatchers.IO) {
+        val t = target ?: return@withContext
+        acc.routeTarget = t
+        for (ttl in 1..8) {
+            val out = runCatching {
+                val p = ProcessBuilder("/system/bin/ping", "-c", "1", "-W", "1", "-t", "$ttl", t)
+                    .redirectErrorStream(true).start()
+                val s = BufferedReader(InputStreamReader(p.inputStream)).readText()
+                p.waitFor()
+                s
+            }.getOrNull() ?: break
+            // Format toybox/iputils: "From 1.2.3.4 ... Time to live exceeded" atau
+            // langsung "... time=0.42 ms" bila hop menjawab.
+            val ip = Regex("(?i)from\\s+([0-9a-f.:]+)").find(out)?.groupValues?.get(1)
+            val rtt = Regex("time=([0-9.]+)\\s*ms").find(out)?.groupValues?.get(1)
+            val reached = out.contains("bytes from", ignoreCase = true) &&
+                !out.contains("exceeded", ignoreCase = true)
+            when {
+                reached -> {
+                    acc.addHop(if (rtt != null) "$ip · ${rtt} ms" else (ip ?: t)); break }
+                ip != null -> acc.addHop(if (rtt != null) "$ip · ${rtt} ms" else ip)
+                else -> { /* hop diam saja — lanjut TTL berikutnya */ }
+            }
+            if (acc.routeHops.size >= 8) break
+        }
+    }
+}
+
+/** Sensor lingkungan yang jarang dimanfaatkan: tekanan, kelembapan, suhu ambient,
+ *  medan magnet, step counter. Semua pasif — auto-discovery via SensorManager. */
+class EnvSampler(ctx: Context, private val acc: ScanAccumulator) : SensorEventListener {
+    private val sm = ctx.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+    private val ctxA = ctx.applicationContext
+
+    private val watched = mapOf(
+        Sensor.TYPE_PRESSURE to "Barometer",
+        Sensor.TYPE_RELATIVE_HUMIDITY to "Humidity",
+        Sensor.TYPE_AMBIENT_TEMPERATURE to "Ambient temp",
+        Sensor.TYPE_MAGNETIC_FIELD to "Magnetometer",
+        Sensor.TYPE_STEP_COUNTER to "Step counter",
+        Sensor.TYPE_LIGHT to "Light",
+        Sensor.TYPE_PROXIMITY to "Proximity",
+        Sensor.TYPE_GYROSCOPE to "Gyroscope",
+        Sensor.TYPE_ACCELEROMETER to "Accelerometer",
+        Sensor.TYPE_GRAVITY to "Gravity",
+        Sensor.TYPE_ROTATION_VECTOR to "Rotation vector",
+        Sensor.TYPE_HEART_RATE to "Heart rate",
+        Sensor.TYPE_SIGNIFICANT_MOTION to "Significant motion",
+        Sensor.TYPE_GEOMAGNETIC_ROTATION_VECTOR to "Geomagnetic rotation",
+    )
+
+    private val active = mutableListOf<Sensor>()
+
+    fun hasAny(): Boolean = active.isNotEmpty()
+
+    fun start() {
+        val canSteps = android.os.Build.VERSION.SDK_INT < 29 ||
+            ContextCompat.checkSelfPermission(ctxA, Manifest.permission.ACTIVITY_RECOGNITION) ==
+                PackageManager.PERMISSION_GRANTED
+        acc.sensorsFound = watched.mapNotNull { (type, name) ->
+            sm.getDefaultSensor(type)?.let { s ->
+                // Step counter butuh izin ACTIVITY_RECOGNITION di API 29+.
+                if (type == Sensor.TYPE_STEP_COUNTER && !canSteps) return@mapNotNull null
+                if (sm.registerListener(this, s, SensorManager.SENSOR_DELAY_NORMAL)) {
+                    active += s
+                    name
+                } else null
+            }
+        }
+    }
+
+    fun stop() = sm.unregisterListener(this)
+
+    override fun onSensorChanged(e: SensorEvent) {
+        when (e.sensor.type) {
+            Sensor.TYPE_PRESSURE -> {
+                acc.pressureHpa = e.values[0]
+            }
+            Sensor.TYPE_RELATIVE_HUMIDITY -> acc.humidityPct = e.values[0]
+            Sensor.TYPE_AMBIENT_TEMPERATURE -> acc.ambientTempC = e.values[0]
+            Sensor.TYPE_MAGNETIC_FIELD -> {
+                val (x, y, z) = e.values
+                acc.magneticUt = sqrt(x * x + y * y + z * z)
+            }
+            Sensor.TYPE_STEP_COUNTER -> acc.onStepCounter(e.values[0])
+        }
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 }
 class CellSampler(private val ctx: Context) {
     private val tm = ctx.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager

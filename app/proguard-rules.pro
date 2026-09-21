@@ -8,6 +8,10 @@
 -keepclasseswithmembers class com.spotkerja.** { kotlinx.serialization.KSerializer serializer(...); }
 -keepclasseswithmembers class com.spotkerja.** { kotlinx.serialization.KSerializer serializer(...); }
 
+# TensorFlow Lite — kelas interpreter & native bindings
+-keep class org.tensorflow.** { *; }
+-dontwarn org.tensorflow.**
+
 # Keep serializable models
 -keep class com.spotkerja.data.** { *; }
 -keep class com.spotkerja.settings.ScanOptions { *; }

@@ -231,6 +231,7 @@ fun SpotkerjaApp(vm: AppViewModel, widgetFastScan: MutableState<Boolean>) {
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION,
             Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.ACTIVITY_RECOGNITION,
         ))
     }
 

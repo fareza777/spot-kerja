@@ -11,6 +11,7 @@ coroutines = "1.9.0"
 junit = "4.13.2"
 playServicesAds = "23.6.0"
 coreSplashscreen = "1.0.1"
+tflite = "2.16.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -27,6 +28,7 @@ androidx-navigation-compose = { group = "androidx.navigation", name = "navigatio
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 play-services-ads = { group = "com.google.android.gms", name = "play-services-ads", version.ref = "playServicesAds" }
+tensorflow-lite = { group = "org.tensorflow", name = "tensorflow-lite", version.ref = "tflite" }
 androidx-core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "coreSplashscreen" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 

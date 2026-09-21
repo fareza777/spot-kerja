@@ -34,6 +34,8 @@ class ScanEngine(private val ctx: Context) {
     private var job: Job? = null
     private var ambient: AmbientSampler? = null
     private var noise: NoiseSampler? = null
+    private var env: EnvSampler? = null
+    private var classifier: SoundClassifier? = null
 
     /** True bila scan selesai penuh (bukan dihentikan manual) — untuk auto-advance. */
     var onFinished: ((SpotResult) -> Unit)? = null
@@ -54,16 +56,26 @@ class ScanEngine(private val ctx: Context) {
         val wifi = if (opts.wifi) WifiSampler(ctx) else null
         val ping = if (opts.ping) PingSampler(ctx, opts.pingHost) else null
         val cell = if (opts.cellular) CellSampler(ctx) else null
-        val congestion = if (opts.wifi) WifiScanSampler(ctx) else null
+        val radio = if (opts.wifi) WifiScanSampler(ctx) else null
+        val internet = InternetChecker(ctx)
         ambient = AmbientSampler(ctx, acc, opts.light, opts.orientation)
             .takeIf { it.hasAny() }?.also { it.start() }
-        noise = if (opts.noise) NoiseSampler(ctx, acc).also { it.start(scope) } else null
+        // Sensor lingkungan jarang — pasif & murah; gated oleh toggle Extended.
+        env = if (opts.extended) EnvSampler(ctx, acc).also { it.start() } else null
+        // YAMNet sound events ikut stream mic — gated oleh toggle Noise.
+        classifier = if (opts.noise && opts.extended) SoundClassifier.create(ctx) else null
+        noise = if (opts.noise) NoiseSampler(ctx, acc, classifier).also { it.start(scope) } else null
 
         job = scope.launch(Dispatchers.Default) {
             _progress.value = ScanProgress(running = true, totalSec = durationSec)
             val deadline = System.currentTimeMillis() + durationSec * 1000L
             var tick = 0
-            congestion?.congestion(acc)
+            radio?.radio(acc)
+            if (opts.wifi || opts.ping) internet.check(acc)
+            // Traceroute paralel — TTL-exceeded hops ke target ping (max ~8 hop).
+            val routeJob = if (opts.ping && opts.extended)
+                launch(Dispatchers.IO) { RouteTracer().trace(acc, ping?.target()) }
+            else null
             while (isActive && System.currentTimeMillis() < deadline) {
                 val rssi = wifi?.sample(acc)
                 val cellDbm = cell?.sample(acc)
@@ -90,6 +102,7 @@ class ScanEngine(private val ctx: Context) {
                 delay(1000)
             }
             _progress.value = _progress.value.copy(live = _progress.value.live, elapsedSec = durationSec)
+            routeJob?.join()
             finish(acc, spotLabel, durationSec, mode, opts, onDone)
         }
     }
@@ -114,6 +127,8 @@ class ScanEngine(private val ctx: Context) {
     ) {
         ambient?.stop(); ambient = null
         noise?.stop(); noise = null
+        env?.stop(); env = null
+        classifier?.close(); classifier = null
         job?.cancel(); job = null
 
         val (_, pings, _) = acc.snapshot()
@@ -134,6 +149,7 @@ class ScanEngine(private val ctx: Context) {
 
         val (rssiL, pings2, luxL) = acc.snapshot()
         val noiseL = acc.noiseSnapshot()
+        val sounds = acc.topSounds(3)
         val metrics = SpotMetrics(
             wifiRssiDbm = rssiL.avgOrNullI(),
             wifiLinkSpeedMbps = acc.linkSpeed,
@@ -155,6 +171,29 @@ class ScanEngine(private val ctx: Context) {
             pingSamples = acc.pingAttempts,
             luxSamples = luxL.size,
             noiseSamples = noiseL.size,
+            wifiSsid = acc.ssid,
+            bssid = acc.bssid,
+            channelWidthMhz = acc.channelWidthMhz,
+            meshApCount = acc.meshApCount,
+            roamCount = acc.roamCount.takeIf { it > 0 },
+            rssiMinDbm = rssiL.minOrNull(),
+            rssiMaxDbm = rssiL.maxOrNull(),
+            txLinkSpeedMbps = acc.txLink,
+            rxLinkSpeedMbps = acc.rxLink,
+            estThroughputMbps = acc.linkSpeed?.let { it * 0.55f },
+            internetState = acc.internetState,
+            routeHops = acc.routeHops,
+            routeTarget = acc.routeTarget,
+            soundTop = sounds.firstOrNull(),
+            soundLabels = sounds,
+            pressureHpa = acc.pressureHpa,
+            altitudeM = acc.pressureHpa?.let {
+                android.hardware.SensorManager.getAltitude(1013.25f, it) },
+            humidityPct = acc.humidityPct,
+            ambientTempC = acc.ambientTempC,
+            magneticUt = acc.magneticUt,
+            stepsDuringScan = acc.stepsDuringScan,
+            sensorsFound = acc.sensorsFound,
         )
         val (scores, total) = ScoreEngine.scoreSpot(metrics, mode)
         val result = SpotResult(
@@ -195,6 +234,8 @@ class ScanEngine(private val ctx: Context) {
         job?.cancel(); job = null
         ambient?.stop(); ambient = null
         noise?.stop(); noise = null
+        env?.stop(); env = null
+        classifier?.close(); classifier = null
         currentAcc = null
         _progress.value = ScanProgress()
     }

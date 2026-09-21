@@ -196,6 +196,16 @@ object ScoreEngine {
         if (metrics.glareRisk == true) notes += "Facing the sun — possible screen glare"
         if (metrics.wifiRssiDbm == null) notes += "Wi-Fi not connected/detected"
         if (metrics.noiseDbAvg == null) notes += "Noise not measured (mic permission off)"
+        metrics.internetState?.let { st ->
+            when (st) {
+                "captive" -> notes += "Captive portal — sign in before internet works"
+                "limited" -> notes += "Connected but internet unverified"
+                "none" -> notes += "No internet — scores reflect local link quality"
+            }
+        }
+        metrics.meshApCount?.let { if (it > 0) notes += "Mesh network: $it other AP(s) share this SSID" }
+        metrics.roamCount?.let { if (it > 0) notes += "Roamed between APs ${it}× during scan" }
+        metrics.soundTop?.let { notes += "Dominant sound: $it" }
         return notes
     }
 

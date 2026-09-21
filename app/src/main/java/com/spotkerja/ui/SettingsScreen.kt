@@ -173,6 +173,12 @@ fun SettingsScreen(
                     "Backup signal estimate", scanOptions.cellular) {
                     onScanOptionsChange(scanOptions.copy(cellular = it))
                 }
+                OptDivider()
+                MetricToggle(Icons.Default.Hub, "Deep metrics",
+                    "Mesh, route trace, env sensors & sound events",
+                    scanOptions.extended) {
+                    onScanOptionsChange(scanOptions.copy(extended = it))
+                }
             }
         }
 

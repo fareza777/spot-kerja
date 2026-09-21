@@ -551,6 +551,94 @@ private fun RowScope.ExportChip(icon: androidx.compose.ui.graphics.vector.ImageV
     }
 }
 
+/** Baris info kecil label→nilai untuk pembacaan ekstra (mesh, env, dst). */
+@Composable
+private fun InfoRow(label: String, value: String) {
+    val p = LocalPalette.current
+    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.width(110.dp),
+            style = MaterialTheme.typography.labelSmall, color = p.textDim)
+        Text(value, Modifier.weight(1f),
+            style = MaterialTheme.typography.labelSmall, color = p.text,
+            fontWeight = FontWeight.SemiBold)
+    }
+}
+
+/** Pembacaan ekstra hasil deep metrics — hanya baris yang punya data tampil. */
+@Composable
+private fun ExtraReadings(m: com.spotkerja.data.SpotMetrics) {
+    val p = LocalPalette.current
+    val rows = buildList<Pair<String, String>> {
+        m.internetState?.let {
+            add("Internet" to when (it) {
+                "ok" -> "online"
+                "captive" -> "captive portal"
+                "limited" -> "unverified"
+                else -> "offline"
+            })
+        }
+        if (m.wifiSsid != null || m.channelWidthMhz != null || m.wifiBand != null) {
+            add("Radio" to listOfNotNull(
+                m.wifiSsid, m.wifiBand,
+                m.channelWidthMhz?.let { "$it MHz" }).joinToString(" · "))
+        }
+        if (m.rxLinkSpeedMbps != null || m.txLinkSpeedMbps != null) {
+            add("Link speed" to
+                "↓${m.rxLinkSpeedMbps ?: "—"} / ↑${m.txLinkSpeedMbps ?: "—"} Mbps" +
+                (m.estThroughputMbps?.let { " · est. ≈${it.toInt()} Mbps" } ?: ""))
+        }
+        if (m.meshApCount != null || m.roamCount != null) {
+            add("Mesh" to listOfNotNull(
+                m.meshApCount?.let { "${it + 1} APs share SSID" },
+                m.roamCount?.let { "roamed $it×" }).joinToString(" · "))
+        }
+        if (m.rssiMinDbm != null && m.rssiMaxDbm != null &&
+            m.rssiMinDbm != m.rssiMaxDbm) {
+            add("RSSI range" to "${m.rssiMinDbm}…${m.rssiMaxDbm} dBm")
+        }
+        if (m.routeHops.isNotEmpty()) {
+            add("Route" to "${m.routeHops.size} hop(s) to ${m.routeTarget ?: "target"}")
+        }
+        if (m.soundLabels.isNotEmpty()) {
+            add("Soundscape" to m.soundLabels.joinToString(" · "))
+        }
+        val env = listOfNotNull(
+            m.ambientTempC?.let { "%.1f °C".format(it) },
+            m.humidityPct?.let { "%.0f%% RH".format(it) },
+            m.pressureHpa?.let { "%.0f hPa".format(it) },
+            m.altitudeM?.let { "≈${it.toInt()} m alt." },
+            m.magneticUt?.let { "%.0f µT".format(it) },
+            m.stepsDuringScan?.let { "$it steps" },
+        )
+        if (env.isNotEmpty()) add("Environment" to env.joinToString(" · "))
+        if (m.sensorsFound.isNotEmpty()) {
+            add("Sensors" to "${m.sensorsFound.size} readable")
+        }
+    }
+    if (rows.isEmpty() && m.routeHops.isEmpty()) return
+    Spacer(Modifier.height(14.dp))
+    HorizontalDivider(color = p.border)
+    Spacer(Modifier.height(10.dp))
+    Column {
+        rows.forEach { (l, v) -> InfoRow(l, v) }
+        if (m.routeHops.isNotEmpty()) {
+            Spacer(Modifier.height(4.dp))
+            m.routeHops.forEachIndexed { i, hop ->
+                Text("${i + 1}. $hop",
+                    Modifier.padding(start = 14.dp, top = 1.dp),
+                    style = MaterialTheme.typography.labelSmall, color = p.textDim)
+            }
+        }
+        if (m.sensorsFound.isNotEmpty()) {
+            Text(m.sensorsFound.joinToString(" · "),
+                Modifier.padding(start = 14.dp, top = 3.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = p.textDim.copy(alpha = 0.7f))
+        }
+    }
+}
+
 @Composable
 private fun SpotDetailCard(spot: SpotResult, rank: Int, displayLabel: String = spot.label) {
     val p = LocalPalette.current
@@ -607,6 +695,7 @@ private fun SpotDetailCard(spot: SpotResult, rank: Int, displayLabel: String = s
                             })
                         MetricBar("Cellular", s.cellular, m.cellularDbm?.let { "$it dBm" } ?: "—")
                     }
+                    ExtraReadings(m)
                     if (spot.notes.isNotEmpty()) {
                         Spacer(Modifier.height(14.dp))
                         HorizontalDivider(color = p.border)

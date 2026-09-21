@@ -20,8 +20,8 @@ android {
         applicationId = "com.spotwise.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "2.5.0"
+        versionCode = 11
+        versionName = "2.6.0"
     }
 
     signingConfigs {
@@ -67,6 +67,10 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+    // Model TFLite dibaca via memory-map — jangan dikompres dalam APK.
+    aaptOptions {
+        noCompress("tflite")
+    }
 }
 
 dependencies {
@@ -84,6 +88,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.play.services.ads)
+    implementation(libs.tensorflow.lite)
     debugImplementation(libs.androidx.compose.ui.tooling)
     testImplementation(libs.junit)
 }

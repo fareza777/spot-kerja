@@ -18,6 +18,8 @@ data class ScanOptions(
     val orientation: Boolean = true,
     val cellular: Boolean = true,
     val pingHost: String = "", // blank = Wi-Fi gateway
+    /** Deep metrics: mesh/route, internet check, env sensors, sound events. */
+    val extended: Boolean = true,
 )
 
 /** Preset scan bernama — simpan paket opsi+durasi+spot count untuk dipakai ulang. */
@@ -84,6 +86,7 @@ class SettingsStore(ctx: Context) {
             orientation = prefs.getBoolean("opt_orientation", true),
             cellular = prefs.getBoolean("opt_cellular", true),
             pingHost = prefs.getString("pingHost", "") ?: "",
+            extended = prefs.getBoolean("opt_extended", true),
         )
         set(v) = prefs.edit()
             .putBoolean("opt_wifi", v.wifi)
@@ -92,6 +95,7 @@ class SettingsStore(ctx: Context) {
             .putBoolean("opt_noise", v.noise)
             .putBoolean("opt_orientation", v.orientation)
             .putBoolean("opt_cellular", v.cellular)
+            .putBoolean("opt_extended", v.extended)
             .putString("pingHost", v.pingHost.trim())
             .apply()
 

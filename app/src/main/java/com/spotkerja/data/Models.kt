@@ -48,6 +48,45 @@ data class SpotMetrics(
     val pingSamples: Int = 0,
     val luxSamples: Int = 0,
     val noiseSamples: Int = 0,
+
+    // --- Mesh / radio detail (wifi-analyzer style) ---
+    val wifiSsid: String? = null,
+    val bssid: String? = null,
+    val channelWidthMhz: Int? = null,
+    /** Jumlah AP lain yang menyiarkan SSID sama (mesh/extender). */
+    val meshApCount: Int? = null,
+    /** Berapa kali BSSID berpindah selama scan — roaming aktif. */
+    val roamCount: Int? = null,
+    val rssiMinDbm: Int? = null,
+    val rssiMaxDbm: Int? = null,
+    val txLinkSpeedMbps: Int? = null,
+    val rxLinkSpeedMbps: Int? = null,
+    /** Estimasi throughput TCP ≈ 55% dari link PHY — kasar, bukan iperf. */
+    val estThroughputMbps: Float? = null,
+
+    // --- Internet readiness ---
+    /** "ok" (validated) | "captive" | "limited" | "none". null = tidak dicek. */
+    val internetState: String? = null,
+
+    // --- Route quality ---
+    /** Hop dari ping TTL traceroute, dipakai display; format "ip · ms". */
+    val routeHops: List<String> = emptyList(),
+    val routeTarget: String? = null,
+
+    // --- Sound events (YAMNet) ---
+    /** Label suara dominan selama scan (YAMNet top-1 tally, Silence diabaikan). */
+    val soundTop: String? = null,
+    val soundLabels: List<String> = emptyList(),
+
+    // --- Environment sensors (fusion + auto-discovery) ---
+    val pressureHpa: Float? = null,
+    val altitudeM: Float? = null,
+    val humidityPct: Float? = null,
+    val ambientTempC: Float? = null,
+    val magneticUt: Float? = null,
+    val stepsDuringScan: Int? = null,
+    /** Nama sensor opsional yang terbaca di device ini. */
+    val sensorsFound: List<String> = emptyList(),
 )
 
 /** Sub-skor 0–100 per metrik. null = metrik tidak tersedia di device. */
