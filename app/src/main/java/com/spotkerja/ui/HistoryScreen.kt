@@ -13,6 +13,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.spotkerja.data.Insights
 import com.spotkerja.data.ScanSession
 import com.spotkerja.data.WorkMode
 import com.spotkerja.ui.components.GlassCard
@@ -41,12 +43,16 @@ fun HistoryScreen(
     onOpen: (ScanSession) -> Unit,
     onDelete: (String) -> Unit,
     bannerAd: (@Composable () -> Unit)? = null,
+    focusMinutes: Map<String, Int> = emptyMap(),
 ) {
     val p = LocalPalette.current
     var month by remember { mutableStateOf(YearMonth.now()) }
     var selectedDay by remember { mutableStateOf<LocalDate?>(null) }
     var query by remember { mutableStateOf("") }
     var modeFilter by remember { mutableStateOf<WorkMode?>(null) }
+    var roomFilter by remember { mutableStateOf<String?>(null) }
+
+    val rooms = remember(sessions) { sessions.mapNotNull { it.room }.distinct() }
 
     // Set of days that have scans (for dot markers)
     val daysWithScans = remember(sessions, month) {
@@ -55,7 +61,7 @@ fun HistoryScreen(
         }.toSet()
     }
 
-    val daySessions = remember(sessions, selectedDay, query, modeFilter) {
+    val daySessions = remember(sessions, selectedDay, query, modeFilter, roomFilter) {
         var list = selectedDay?.let { d ->
             sessions.filter {
                 Instant.ofEpochMilli(it.createdAtEpochMs)
@@ -63,6 +69,7 @@ fun HistoryScreen(
             }
         } ?: sessions
         modeFilter?.let { mf -> list = list.filter { it.mode == mf.name } }
+        roomFilter?.let { rf -> list = list.filter { it.room == rf } }
         if (query.isNotBlank()) {
             val q = query.trim().lowercase()
             list = list.filter { s ->
@@ -80,6 +87,12 @@ fun HistoryScreen(
             .filter { it.value.size >= 2 }
             .toList().sortedByDescending { it.second.size }.take(4)
     }
+    val deltas = remember(sessions) { Insights.deltas(sessions).associateBy { it.label } }
+    val byHour = remember(sessions) { Insights.bestByHour(sessions) }
+    val busy = remember(sessions) { Insights.busyHours(sessions) }
+    val badgeList = remember(sessions, focusMinutes) { Insights.badges(sessions, focusMinutes) }
+    val streak = remember(sessions) { Insights.liveStreak(sessions) }
+    val feelMatch = remember(sessions) { Insights.feelMatch(sessions) }
 
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 20.dp),
@@ -87,10 +100,155 @@ fun HistoryScreen(
         contentPadding = PaddingValues(vertical = 22.dp),
     ) {
         item {
-            Text("Scan history", style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold)
-            Text("Tap a day to filter", style = MaterialTheme.typography.bodySmall,
-                color = p.textDim)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Scan history", style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold)
+                    Text("Tap a day to filter", style = MaterialTheme.typography.bodySmall,
+                        color = p.textDim)
+                }
+                if (streak > 1) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = p.gold.copy(alpha = 0.14f),
+                        border = BorderStroke(1.dp, p.gold.copy(alpha = 0.5f)),
+                    ) {
+                        Text("${streak}d streak",
+                            Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold, color = p.gold)
+                    }
+                }
+            }
+        }
+
+        // Badges — pencapaian lokal, dihitung dari history saja.
+        if (sessions.isNotEmpty()) {
+            item {
+                GlassCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("Badges", style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(10.dp))
+                        badgeList.chunked(2).forEach { pair ->
+                            Row(Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                pair.forEach { b ->
+                                    Surface(
+                                        Modifier.weight(1f).padding(vertical = 4.dp),
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = if (b.unlocked) p.accent.copy(alpha = 0.10f)
+                                            else p.high.copy(alpha = 0.4f),
+                                        border = BorderStroke(1.dp,
+                                            if (b.unlocked) p.accent.copy(alpha = 0.5f) else p.border),
+                                    ) {
+                                        Column(Modifier.padding(10.dp)) {
+                                            Text(b.name, style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (b.unlocked) p.accent else p.textDim,
+                                                maxLines = 1)
+                                            Text(b.desc, style = MaterialTheme.typography.labelSmall,
+                                                color = p.textDim, maxLines = 2)
+                                        }
+                                    }
+                                }
+                                if (pair.size == 1) Spacer(Modifier.weight(1f))
+                            }
+                        }
+                        feelMatch?.let { (pct, n) ->
+                            Spacer(Modifier.height(8.dp))
+                            Text("Blind tests: your feel matched the data $pct% of $n runs",
+                                style = MaterialTheme.typography.labelSmall, color = p.accent)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Best spot by hour — heatmap spot × waktu dari seluruh history.
+        if (byHour.size >= 2 && byHour.any { r -> r.second.count { it != null } >= 2 }) {
+            item {
+                GlassCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("Best spot by hour", style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold)
+                        Text("Average score per time of day", style = MaterialTheme.typography.labelSmall,
+                            color = p.textDim)
+                        Spacer(Modifier.height(10.dp))
+                        val shorts = listOf("AM", "Noon", "PM", "Eve", "Night")
+                        Row(Modifier.fillMaxWidth()) {
+                            Spacer(Modifier.width(92.dp))
+                            shorts.forEach {
+                                Text(it, Modifier.weight(1f), textAlign = TextAlign.Center,
+                                    style = MaterialTheme.typography.labelSmall, color = p.textDim)
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        byHour.forEach { (label, vals) ->
+                            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Text(label, Modifier.width(92.dp), maxLines = 1,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = p.text,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                vals.forEach { v ->
+                                    Box(
+                                        Modifier.weight(1f).padding(horizontal = 2.dp)
+                                            .height(26.dp).clip(RoundedCornerShape(7.dp))
+                                            .background(
+                                                if (v == null) p.high.copy(alpha = 0.35f)
+                                                else LocalScoreColor.current(v)
+                                                    .copy(alpha = 0.25f + 0.55f * v / 100f)),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        if (v != null) Text("${v.toInt()}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold, color = p.text)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Congestion forecast — jam-jam jaringan ramai (avg ping per waktu).
+        if (busy.any { it.samples > 0 }) {
+            item {
+                GlassCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("Network busiest hours", style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold)
+                        Text("Average ping per time of day", style = MaterialTheme.typography.labelSmall,
+                            color = p.textDim)
+                        Spacer(Modifier.height(12.dp))
+                        val maxPing = busy.mapNotNull { it.pingMs }.maxOrNull() ?: 1f
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                            busy.forEach { b ->
+                                Column(Modifier.weight(1f),
+                                    horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(b.pingMs?.let { "${it.toInt()}" } ?: "·",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = p.textDim)
+                                    Spacer(Modifier.height(4.dp))
+                                    Box(
+                                        Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+                                            .height(((b.pingMs ?: 0f) / maxPing * 70f).coerceAtLeast(4f).dp)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(
+                                                if (b.samples == 0) p.high.copy(alpha = 0.4f)
+                                                else p.accent.copy(alpha = 0.55f)),
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(b.label.take(4), style = MaterialTheme.typography.labelSmall,
+                                        color = p.textDim, maxLines = 1)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         item {
@@ -123,6 +281,22 @@ fun HistoryScreen(
                     )
                 }
             }
+            if (rooms.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.MeetingRoom, null, Modifier.size(14.dp),
+                        tint = p.textDim)
+                    rooms.forEach { r ->
+                        FilterChip(
+                            selected = roomFilter == r, onClick = {
+                                roomFilter = if (roomFilter == r) null else r },
+                            label = { Text(r, maxLines = 1) },
+                        )
+                    }
+                }
+            }
         }
 
         if (spotTrends.isNotEmpty()) {
@@ -141,9 +315,13 @@ fun HistoryScreen(
                                     Text(label, maxLines = 1,
                                         style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.SemiBold)
-                                    Text("${scores.size}× • best %.0f".format(scores.max()),
+                                    Text(
+                                        "${scores.size}× • best %.0f".format(scores.max()) +
+                                            (deltas[label]?.let { " • ${it.changeText()}" } ?: "") +
+                                            (focusMinutes[label]?.let { " • ${it}m focus" } ?: ""),
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = p.textDim)
+                                        color = p.textDim, maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                 }
                                 Sparkline(scores, Modifier.weight(1f))
                                 Text("%.0f".format(scores.last()),

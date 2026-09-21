@@ -3,6 +3,8 @@ package com.spotkerja.vm
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.spotkerja.data.FocusLog
+import com.spotkerja.data.FocusStore
 import com.spotkerja.data.ScanSession
 import com.spotkerja.data.ScoreEngine
 import com.spotkerja.data.SessionStore
@@ -25,6 +27,7 @@ enum class ScanPhase { SETUP, SCANNING, RESULTS }
 class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val store = SessionStore(app)
+    private val focusStore = FocusStore(app)
     private val settings = SettingsStore(app)
     val engine = ScanEngine(app)
 
@@ -81,6 +84,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _presets = MutableStateFlow(settings.presets())
     val presets: StateFlow<List<ScanPreset>> = _presets
 
+    /** Blind A/B test: label spot disamarkan sampai user memilih favorit. */
+    private val _blindTest = MutableStateFlow(settings.blindTest)
+    val blindTest: StateFlow<Boolean> = _blindTest
+
+    fun setBlindTest(v: Boolean) { _blindTest.value = v; settings.blindTest = v }
+
+    /** Menit fokus nyata per label spot — dari FocusStore. */
+    private val _focusMinutes = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val focusMinutes: StateFlow<Map<String, Int>> = _focusMinutes
+
+    private fun refreshFocus() {
+        viewModelScope.launch {
+            _focusMinutes.value = focusStore.list()
+                .groupBy({ it.spotLabel }, { it.minutes })
+                .mapValues { it.value.sum() }
+        }
+    }
+
+    fun logFocus(spotLabel: String, minutes: Int) {
+        viewModelScope.launch {
+            focusStore.add(FocusLog(spotLabel, System.currentTimeMillis(), minutes))
+            refreshFocus()
+        }
+    }
+
     /** Simpan konfigurasi scan saat ini sebagai preset bernama. */
     fun saveCurrentAsPreset(name: String) {
         settings.savePreset(ScanPreset(
@@ -106,7 +134,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     val scanProgress: StateFlow<ScanProgress> = engine.progress
 
-    init { refreshHistory() }
+    init { refreshHistory(); refreshFocus() }
 
     fun setTheme(t: ThemeOption) { _theme.value = t; settings.theme = t }
     fun setThemeMode(m: ThemeMode) { _themeMode.value = m; settings.themeMode = m }
@@ -205,16 +233,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             spots = _spots.value,
             bestSpotLabel = ScoreEngine.bestSpot(_spots.value)?.label,
             optionsUsed = _scanOptions.value,
+            blind = _blindTest.value && _spots.value.size >= 2,
+            latDeg = engine.lastLoc?.first,
+            lonDeg = engine.lastLoc?.second,
         )
         viewModelScope.launch {
             store.save(session)
             refreshHistory()
         }
-        currentSession = session
+        _currentSession.value = session
     }
 
-    var currentSession: ScanSession? = null
-        private set
+    private val _currentSession = MutableStateFlow<ScanSession?>(null)
+    val currentSession: StateFlow<ScanSession?> = _currentSession
 
     fun sessionById(id: String, onLoaded: (ScanSession?) -> Unit) {
         viewModelScope.launch { onLoaded(_history.value.firstOrNull { it.id == id }) }
@@ -229,6 +260,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _spots.value = emptyList()
         _currentSpotIndex.value = 0
         _isFastScan.value = false
+        _currentSession.value = null
     }
 
     fun refreshHistory() {
@@ -237,6 +269,42 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteSession(id: String) {
         viewModelScope.launch { store.delete(id); refreshHistory() }
+    }
+
+    /** Update satu sesi tersimpan (room, userPick, peta) lalu refresh history. */
+    private fun updateSession(updated: ScanSession) {
+        viewModelScope.launch {
+            store.save(updated)
+            refreshHistory()
+            if (_currentSession.value?.id == updated.id) _currentSession.value = updated
+        }
+    }
+
+    fun setSessionRoom(id: String, room: String?) {
+        _history.value.firstOrNull { it.id == id }?.let {
+            updateSession(it.copy(room = room?.trim()?.ifEmpty { null }))
+        }
+    }
+
+    fun setUserPick(id: String, label: String) {
+        _history.value.firstOrNull { it.id == id }?.let {
+            updateSession(it.copy(userPickLabel = label))
+        }
+    }
+
+    /** Tempatkan/hapus spot di sel floor plan (x,y). null = hapus penempatan. */
+    fun setSpotCell(sessionId: String, label: String, x: Int?, y: Int?) {
+        val sess = _history.value.firstOrNull { it.id == sessionId }
+            ?: _currentSession.value.takeIf { it?.id == sessionId } ?: return
+        val spots = sess.spots.map { s ->
+            when {
+                s.label == label -> s.copy(mapX = x, mapY = y)
+                // sel yang baru dipakai harus unik — bersihkan dari spot lain
+                x != null && s.mapX == x && s.mapY == y -> s.copy(mapX = null, mapY = null)
+                else -> s
+            }
+        }
+        updateSession(sess.copy(spots = spots))
     }
 
     fun clearHistory() {

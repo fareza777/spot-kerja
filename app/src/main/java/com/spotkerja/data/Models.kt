@@ -74,6 +74,9 @@ data class SpotResult(
     val notes: List<String> = emptyList(),
     /** Keyakinan hasil 0–100: cakupan metrik yang berhasil diukur. */
     val confidencePct: Int? = null,
+    /** Posisi di mini floor plan (grid), null = belum ditempatkan. */
+    val mapX: Int? = null,
+    val mapY: Int? = null,
 )
 
 @Serializable
@@ -85,4 +88,13 @@ data class ScanSession(
     val bestSpotLabel: String?,
     /** Opsi scan yang dipakai saat sesi ini — agar hasil lama tetap interpretable. */
     val optionsUsed: ScanOptions? = null,
+    /** Profil ruangan opsional ("Home", "Kantor") — diisi manual dari history. */
+    val room: String? = null,
+    /** Blind test: label spot disembunyikan sampai user memilih favorit. */
+    val blind: Boolean = false,
+    /** Label spot yang dipilih user sebagai favorit (feel) pada blind test. */
+    val userPickLabel: String? = null,
+    /** Lokasi saat scan (dibulatkan ~1 km) — untuk glare forecast offline. */
+    val latDeg: Double? = null,
+    val lonDeg: Double? = null,
 )

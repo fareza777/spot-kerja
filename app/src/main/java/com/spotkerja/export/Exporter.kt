@@ -13,6 +13,7 @@ import java.util.Date
 import java.util.Locale
 
 enum class ExportFormat(val label: String, val mime: String, val ext: String) {
+    CARD("Share card", "image/png", "png"),
     PNG("PNG infographic", "image/png", "png"),
     PDF("PDF report", "application/pdf", "pdf"),
     DOCX("Word document", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx"),
@@ -91,6 +92,7 @@ object Exporter {
             val base = "spotwise-${session.id}"
             val file = File(dir, "$base.${format.ext}")
             when (format) {
+                ExportFormat.CARD -> Infographic.writeCard(session, file, colors)
                 ExportFormat.PNG -> Infographic.writePng(session, file, colors)
                 ExportFormat.PDF -> Infographic.writePdf(session, file, colors)
                 ExportFormat.DOCX -> {

@@ -75,6 +75,7 @@ import com.spotkerja.export.ExportFormat
 import com.spotkerja.export.Exporter
 import com.spotkerja.export.InfoColors
 import com.spotkerja.settings.ThemeMode
+import com.spotkerja.ui.FocusScreen
 import com.spotkerja.ui.HistoryScreen
 import com.spotkerja.ui.HomeScreen
 import com.spotkerja.ui.OnboardingOverlay
@@ -143,7 +144,9 @@ object Routes {
     const val HISTORY = "history"
     const val SETTINGS = "settings"
     const val SESSION = "session/{id}"
+    const val FOCUS = "focus/{label}"
     fun session(id: String) = "session/$id"
+    fun focus(label: String) = "focus/${android.net.Uri.encode(label)}"
 }
 
 private data class Tab(val route: String, val label: String,
@@ -178,6 +181,9 @@ fun SpotkerjaApp(vm: AppViewModel, widgetFastScan: MutableState<Boolean>) {
     val isFastScan by vm.isFastScan.collectAsState()
     val onboarded by vm.onboarded.collectAsState()
     val presets by vm.presets.collectAsState()
+    val blindTest by vm.blindTest.collectAsState()
+    val focusMinutes by vm.focusMinutes.collectAsState()
+    val currentSession by vm.currentSession.collectAsState()
     var exporting by remember { mutableStateOf(false) }
 
     val scoreColor = LocalScoreColor.current
@@ -240,7 +246,7 @@ fun SpotkerjaApp(vm: AppViewModel, widgetFastScan: MutableState<Boolean>) {
     }
 
     fun export(format: ExportFormat) {
-        val s = vm.currentSession ?: return
+        val s = vm.currentSession.value ?: return
         exporting = true
         scope.launch {
             runCatching { Exporter.export(ctx, s, format, infoColors) }
@@ -311,6 +317,8 @@ fun SpotkerjaApp(vm: AppViewModel, widgetFastScan: MutableState<Boolean>) {
                     onOpenSession = { s -> nav.navigate(Routes.session(s.id)) },
                     presets = presets,
                     onApplyPreset = vm::applyPreset,
+                    blindTest = blindTest,
+                    onBlindChange = vm::setBlindTest,
                     bannerAd = if (adsEnabled) ({
                         BannerAd(Modifier
                             .fillMaxWidth()
@@ -346,6 +354,14 @@ fun SpotkerjaApp(vm: AppViewModel, widgetFastScan: MutableState<Boolean>) {
                         nav.popBackStack(Routes.HOME, inclusive = false)
                     },
                     exporting = exporting,
+                    session = currentSession,
+                    onFocusSpot = { label -> nav.navigate(Routes.focus(label)) },
+                    onCellAssign = { l, x, y ->
+                        currentSession?.let { vm.setSpotCell(it.id, l, x, y) } },
+                    onPickFavorite = { l ->
+                        currentSession?.let { vm.setUserPick(it.id, l) } },
+                    onAssignRoom = { r ->
+                        currentSession?.let { vm.setSessionRoom(it.id, r) } },
                     bannerAd = if (adsEnabled) ({
                         BannerAd(Modifier
                             .fillMaxWidth()
@@ -353,11 +369,20 @@ fun SpotkerjaApp(vm: AppViewModel, widgetFastScan: MutableState<Boolean>) {
                     }) else null,
                 )
             }
+            composable(Routes.FOCUS) { backStackEntry ->
+                val label = backStackEntry.arguments?.getString("label") ?: ""
+                FocusScreen(
+                    spotLabel = label,
+                    onLogMinutes = vm::logFocus,
+                    onDone = { nav.popBackStack() },
+                )
+            }
             composable(Routes.HISTORY) {
                 HistoryScreen(
                     sessions = history,
                     onOpen = { s -> nav.navigate(Routes.session(s.id)) },
                     onDelete = vm::deleteSession,
+                    focusMinutes = focusMinutes,
                     bannerAd = if (adsEnabled) ({
                         BannerAd(Modifier
                             .fillMaxWidth()
@@ -390,7 +415,10 @@ fun SpotkerjaApp(vm: AppViewModel, widgetFastScan: MutableState<Boolean>) {
                 composable(Routes.SESSION) { backStackEntry ->
                 val id = backStackEntry.arguments?.getString("id")
                 var session by remember { mutableStateOf<ScanSession?>(null) }
-                LaunchedEffect(id) { id?.let { vm.sessionById(it) { s -> session = s } } }
+                // Reload saat history berubah (assign room / blind pick / peta).
+                LaunchedEffect(id, history) {
+                    id?.let { vm.sessionById(it) { s -> session = s } }
+                }
                 session?.let { s ->
                     ResultsScreen(
                         spots = s.spots,
@@ -403,6 +431,11 @@ fun SpotkerjaApp(vm: AppViewModel, widgetFastScan: MutableState<Boolean>) {
                             nav.popBackStack(Routes.HOME, inclusive = false)
                         },
                         onBack = { nav.popBackStack() },
+                        session = s,
+                        onFocusSpot = { l -> nav.navigate(Routes.focus(l)) },
+                        onCellAssign = { l, x, y -> vm.setSpotCell(s.id, l, x, y) },
+                        onPickFavorite = { l -> vm.setUserPick(s.id, l) },
+                        onAssignRoom = { r -> vm.setSessionRoom(s.id, r) },
                     )
                 }
             }

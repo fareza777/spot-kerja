@@ -72,6 +72,8 @@ fun HomeScreen(
     presets: List<ScanPreset> = emptyList(),
     onApplyPreset: (ScanPreset) -> Unit = {},
     bannerAd: (@Composable () -> Unit)? = null,
+    blindTest: Boolean = false,
+    onBlindChange: (Boolean) -> Unit = {},
 ) {
     val haptics = LocalHapticFeedback.current
     val p = LocalPalette.current
@@ -335,6 +337,27 @@ fun HomeScreen(
                                         tint = p.textDim)
                                 }
                             }
+                        }
+                    }
+                    // Blind A/B test: label disamarkan sampai user pilih favorit.
+                    if (spotCount >= 2) {
+                        Spacer(Modifier.height(4.dp))
+                        HorizontalDivider(color = p.border.copy(alpha = 0.6f))
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Default.VisibilityOff, null, Modifier.size(15.dp),
+                                tint = if (blindTest) p.accent else p.textDim)
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("Blind test", fontWeight = FontWeight.SemiBold,
+                                    style = MaterialTheme.typography.labelLarge, color = p.text)
+                                Text("Hide spot names — pick by feel, then compare with data",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = p.textDim, maxLines = 2)
+                            }
+                            Switch(checked = blindTest, onCheckedChange = onBlindChange)
                         }
                     }
                 }
@@ -646,14 +669,19 @@ fun HistoryRow(
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(session.mode, fontWeight = FontWeight.SemiBold)
+                Text(session.mode, fontWeight = FontWeight.SemiBold,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
                     SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault())
                         .format(Date(session.createdAtEpochMs)) +
                         " • ${session.spots.size} spots" +
-                        (session.bestSpotLabel?.let { " • best: $it" } ?: ""),
+                        (session.room?.let { " • $it" } ?: "") +
+                        (session.bestSpotLabel?.takeIf { !session.blind }
+                            ?.let { " • best: $it" } ?: "") +
+                        (if (session.blind && session.userPickLabel == null)
+                            " • blind test — pick your favorite" else ""),
                     style = MaterialTheme.typography.bodySmall,
-                    color = p.textDim,
+                    color = if (session.blind && session.userPickLabel == null) p.gold else p.textDim,
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
             }

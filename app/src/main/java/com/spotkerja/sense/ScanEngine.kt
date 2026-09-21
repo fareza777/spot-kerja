@@ -124,6 +124,7 @@ class ScanEngine(private val ctx: Context) {
         val packetLoss = if (pingUnreachable) null else acc.packetLossPct()
 
         val loc = lastKnownLocation(ctx)
+        lastLoc = loc
         val sunAz = loc?.let { SunPosition.azimuthDeg(System.currentTimeMillis(), it.first, it.second) }
         val glare = if (sunAz != null && acc.azimuthDeg != null) {
             SunPosition.angularDiff(acc.azimuthDeg!!, sunAz) < 45f
@@ -185,6 +186,10 @@ class ScanEngine(private val ctx: Context) {
     }
 
     fun attachAcc(acc: ScanAccumulator) { currentAcc = acc }
+
+    /** Lokasi terakhir yang dipakai scan (dibulatkan ~1 km) — untuk glare forecast. */
+    var lastLoc: Pair<Double, Double>? = null
+        private set
 
     fun cancel() {
         job?.cancel(); job = null

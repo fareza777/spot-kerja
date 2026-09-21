@@ -5,6 +5,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -25,6 +26,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.spotkerja.data.Analysis
+import com.spotkerja.data.Insights
+import com.spotkerja.data.ScanSession
 import com.spotkerja.data.ScoreEngine
 import com.spotkerja.data.SpotResult
 import com.spotkerja.data.SunPosition
@@ -42,6 +45,16 @@ fun ResultsScreen(
     onBack: (() -> Unit)? = null,
     exporting: Boolean = false,
     bannerAd: (@Composable () -> Unit)? = null,
+    /** Sesi penuh — untuk glare forecast, blind test, room map & profil ruangan. */
+    session: ScanSession? = null,
+    /** "Focus here" → FocusScreen dengan label spot (masked bila blind). */
+    onFocusSpot: ((String) -> Unit)? = null,
+    /** Assign spot ke sel floor plan (null = hapus). */
+    onCellAssign: ((String, Int?, Int?) -> Unit)? = null,
+    /** Blind test: user memilih spot yang terasa terbaik (label asli). */
+    onPickFavorite: ((String) -> Unit)? = null,
+    /** Set/hapus nama ruangan sesi ini. */
+    onAssignRoom: ((String?) -> Unit)? = null,
 ) {
     val haptics = LocalHapticFeedback.current
     val p = LocalPalette.current
@@ -51,16 +64,52 @@ fun ResultsScreen(
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
 
+    // Blind test: label asli disamarkan "Spot N" (urutan input) sampai user
+    // memilih favorit — feel vs data dibandingkan di history.
+    val blindActive = session?.blind == true && session.userPickLabel == null
+    fun label(s: SpotResult): String = if (blindActive && session != null)
+        "Spot ${session.spots.indexOfFirst { it.label == s.label } + 1}" else s.label
+
+    var editingRoom by remember { mutableStateOf(false) }
+
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
         contentPadding = PaddingValues(vertical = 22.dp),
     ) {
-        if (onBack != null) {
+        if (onBack != null || onAssignRoom != null) {
             item {
-                TextButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp)); Text("Back")
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    if (onBack != null) {
+                        TextButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp)); Text("Back")
+                        }
+                    }
+                    Spacer(Modifier.weight(1f))
+                    if (onAssignRoom != null) {
+                        Surface(
+                            onClick = { editingRoom = true },
+                            shape = RoundedCornerShape(10.dp),
+                            color = p.high,
+                            border = BorderStroke(1.dp, p.border),
+                        ) {
+                            Row(
+                                Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.Default.MeetingRoom, null, Modifier.size(14.dp),
+                                    tint = p.accent)
+                                Spacer(Modifier.width(5.dp))
+                                Text(
+                                    session?.room ?: "Assign room",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = p.text, maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -91,7 +140,7 @@ fun ResultsScreen(
                                         }
                                     }
                                     Spacer(Modifier.height(10.dp))
-                                    Text(b.label, style = MaterialTheme.typography.headlineMedium,
+                                    Text(label(b), style = MaterialTheme.typography.headlineMedium,
                                         maxLines = 2, overflow = TextOverflow.Ellipsis)
                                     if (ScoreEngine.isCloseCall(spots)) {
                                         Text("Very close with the runner-up",
@@ -149,7 +198,7 @@ fun ResultsScreen(
             Spacer(Modifier.height(10.dp))
             GlassCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(18.dp)) {
-                    CompareChart(sorted.map { it.label to it.totalScore })
+                    CompareChart(sorted.map { label(it) to it.totalScore })
                 }
             }
         }
@@ -159,7 +208,7 @@ fun ResultsScreen(
         val allAxes = listOf("Wi-Fi", "Ping", "Jitter", "Loss", "Light",
             "Noise", "Facing", "Cell")
         val allSeries = sorted.take(3).map { s ->
-            s.label to listOf(s.scores.wifi, s.scores.ping, s.scores.jitter,
+            label(s) to listOf(s.scores.wifi, s.scores.ping, s.scores.jitter,
                 s.scores.packetLoss, s.scores.light, s.scores.noise,
                 s.scores.orientation, s.scores.cellular)
         }
@@ -207,6 +256,169 @@ fun ResultsScreen(
             }
         }
 
+        // Blind pick: pilih spot favorit berdasar feel — label masih tersembunyi.
+        if (blindActive && onPickFavorite != null && session != null) {
+            item {
+                SectionHeader("Blind test")
+                Spacer(Modifier.height(10.dp))
+                GlassCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(18.dp)) {
+                        Text("Which spot felt best?",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold)
+                        Text("Labels stay hidden — pick after actually working there. " +
+                            "We'll compare your feel with the data.",
+                            style = MaterialTheme.typography.bodySmall, color = p.textDim)
+                        Spacer(Modifier.height(12.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            session.spots.forEachIndexed { i, s ->
+                                Surface(
+                                    onClick = {
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onPickFavorite(s.label)
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = p.accent.copy(alpha = 0.12f),
+                                    border = BorderStroke(1.dp, p.accent.copy(alpha = 0.5f)),
+                                ) {
+                                    Text("Spot ${i + 1}",
+                                        Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.SemiBold, color = p.accent)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (session?.blind == true && session.userPickLabel != null) {
+            item {
+                GlassCard(Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            if (session.userPickLabel == session.bestSpotLabel)
+                                Icons.Default.Handshake else Icons.Default.Compare,
+                            null, Modifier.size(18.dp),
+                            tint = if (session.userPickLabel == session.bestSpotLabel)
+                                p.accent else p.gold)
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            if (session.userPickLabel == session.bestSpotLabel)
+                                "Your pick matches the data — $session.userPickLabel wins."
+                            else "You picked ${session.userPickLabel}; data scored " +
+                                "${session.bestSpotLabel} highest.",
+                            style = MaterialTheme.typography.bodySmall, color = p.textDim,
+                        )
+                    }
+                }
+            }
+        }
+
+        // Glare forecast: kapan matahari menyilaukan tiap spot (24 jam ke depan).
+        session?.let { sess -> Insights.glareWindows(sess).takeIf { it.isNotEmpty() }?.let { sess to it } }
+            ?.let { (sess, windows) ->
+                item {
+                    SectionHeader("Glare forecast")
+                    Spacer(Modifier.height(10.dp))
+                    GlassCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(18.dp)) {
+                            windows.forEach { w ->
+                                Row(Modifier.padding(vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.WbSunny, null, Modifier.size(14.dp),
+                                        tint = p.gold)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(label(sess.spots.first { it.label == w.spotLabel }),
+                                        Modifier.weight(1f),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.SemiBold, color = p.text,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("glare likely ${w.text()}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = p.textDim)
+                                }
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            Text("Estimated from the sun's path at this location.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = p.textDim.copy(alpha = 0.7f))
+                        }
+                    }
+                }
+            }
+
+        // Mini floor plan: letakkan spot pada grid — peta skor ruangan.
+        if (session != null && onCellAssign != null && session.spots.isNotEmpty()) {
+            item {
+                SectionHeader("Room map")
+                Spacer(Modifier.height(10.dp))
+                GlassCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(18.dp)) {
+                        val cols = 6
+                        val rows = 6
+                        val placed = session.spots.filter { it.mapX != null && it.mapY != null }
+                        val next = sorted.firstOrNull { it.mapX == null }
+                        Text(
+                            if (placed.size < session.spots.size)
+                                "Tap a cell to place ${next?.let { label(it) } ?: "a spot"} " +
+                                    "· tap a placed cell to clear"
+                            else "Tap a placed cell to clear",
+                            style = MaterialTheme.typography.bodySmall, color = p.textDim)
+                        Spacer(Modifier.height(12.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            for (y in 0 until rows) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    for (x in 0 until cols) {
+                                        val occ = session.spots.firstOrNull {
+                                            it.mapX == x && it.mapY == y }
+                                        Box(
+                                            Modifier.weight(1f).aspectRatio(1f)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(
+                                                    if (occ != null)
+                                                        sc(occ.totalScore).copy(alpha = 0.35f)
+                                                    else p.high.copy(alpha = 0.5f))
+                                                .clickable {
+                                                    if (occ != null)
+                                                        onCellAssign(occ.label, null, null)
+                                                    else next?.let {
+                                                        onCellAssign(it.label, x, y)
+                                                    }
+                                                },
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            if (occ != null) {
+                                                Text(
+                                                    "${occ.totalScore.toInt()}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.Bold, color = p.text)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (placed.isNotEmpty()) {
+                            Spacer(Modifier.height(10.dp))
+                            placed.forEach { s ->
+                                Row(Modifier.padding(vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    Box(Modifier.size(8.dp).clip(RoundedCornerShape(3.dp))
+                                        .background(sc(s.totalScore)))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("${label(s)} — ${s.totalScore.toInt()}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = p.textDim, maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Hint rescan bila ada risiko silau — posisi matahari bergeser tiap jam.
         if (sorted.any { it.metrics.glareRisk == true }) {
             item {
@@ -225,7 +437,7 @@ fun ResultsScreen(
         }
 
         item { SectionHeader("Spot details") }
-        itemsIndexed(sorted) { rank, spot -> SpotDetailCard(spot, rank) }
+        itemsIndexed(sorted) { rank, spot -> SpotDetailCard(spot, rank, label(spot)) }
 
         item {
             SectionHeader("Export results")
@@ -243,7 +455,7 @@ fun ResultsScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 ExportChip(Icons.Default.TableChart, "CSV") { onExport(ExportFormat.CSV) }
                 ExportChip(Icons.AutoMirrored.Filled.TextSnippet, "Text") { onExport(ExportFormat.TEXT) }
-                Spacer(Modifier.weight(1f))
+                ExportChip(Icons.Default.Share, "Card") { onExport(ExportFormat.CARD) }
             }
         }
 
@@ -262,6 +474,23 @@ fun ResultsScreen(
                 Spacer(Modifier.width(6.dp))
                 Text("New Scan", fontWeight = FontWeight.Bold)
             }
+            if (onFocusSpot != null && best != null) {
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onFocusSpot(best.label)
+                    },
+                    Modifier.fillMaxWidth().height(50.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, p.accent.copy(alpha = 0.6f)),
+                ) {
+                    Icon(Icons.Default.Timer, null, Modifier.size(18.dp), tint = p.accent)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Focus at ${label(best)}", fontWeight = FontWeight.SemiBold,
+                        color = p.accent, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
             Text(
                 "Work Spot Score combines Wi-Fi, ping/jitter/loss, light, noise, orientation " +
                     "& cellular — weights adapt to ${mode.label} mode. " +
@@ -273,6 +502,30 @@ fun ResultsScreen(
         }
 
         bannerAd?.let { item { it() } }
+    }
+
+    if (editingRoom) {
+        var roomText by remember { mutableStateOf(session?.room ?: "") }
+        AlertDialog(
+            onDismissRequest = { editingRoom = false },
+            title = { Text("Room profile") },
+            text = {
+                OutlinedTextField(
+                    value = roomText, onValueChange = { roomText = it },
+                    placeholder = { Text("e.g. Home, Office, Café") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onAssignRoom?.invoke(roomText.ifBlank { null })
+                    editingRoom = false
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingRoom = false }) { Text("Cancel") }
+            },
+        )
     }
 }
 
@@ -299,7 +552,7 @@ private fun RowScope.ExportChip(icon: androidx.compose.ui.graphics.vector.ImageV
 }
 
 @Composable
-private fun SpotDetailCard(spot: SpotResult, rank: Int) {
+private fun SpotDetailCard(spot: SpotResult, rank: Int, displayLabel: String = spot.label) {
     val p = LocalPalette.current
     val sc = LocalScoreColor.current
     var expanded by remember { mutableStateOf(rank == 0) }
@@ -309,7 +562,7 @@ private fun SpotDetailCard(spot: SpotResult, rank: Int) {
                 RankBadge(rank)
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(spot.label, fontWeight = FontWeight.Bold,
+                    Text(displayLabel, fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.titleMedium,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text("${spot.durationSec}s • ${spot.metrics.wifiSamples +

@@ -70,6 +70,11 @@ class SettingsStore(ctx: Context) {
         get() = prefs.getBoolean("ads", true)
         set(v) = prefs.edit().putBoolean("ads", v).apply()
 
+    /** Blind A/B test: label spot disamarkan sampai user memilih favorit. */
+    var blindTest: Boolean
+        get() = prefs.getBoolean("blindTest", false)
+        set(v) = prefs.edit().putBoolean("blindTest", v).apply()
+
     var scanOptions: ScanOptions
         get() = ScanOptions(
             wifi = prefs.getBoolean("opt_wifi", true),
