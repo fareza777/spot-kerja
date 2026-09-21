@@ -12,6 +12,11 @@
 -keep class org.tensorflow.** { *; }
 -dontwarn org.tensorflow.**
 
+# MediaPipe tasks — annotation-processor classes (javapoet/autovalue) tidak dipakai di runtime
+-dontwarn javax.lang.model.**
+-dontwarn autovalue.shaded.**
+-dontwarn com.google.auto.value.**
+
 # Keep serializable models
 -keep class com.spotkerja.data.** { *; }
 -keep class com.spotkerja.settings.ScanOptions { *; }

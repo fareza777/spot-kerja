@@ -55,6 +55,8 @@ fun ResultsScreen(
     onPickFavorite: ((String) -> Unit)? = null,
     /** Set/hapus nama ruangan sesi ini. */
     onAssignRoom: ((String?) -> Unit)? = null,
+    /** Buka posture check (kamera depan + MediaPipe Pose). */
+    onPosture: (() -> Unit)? = null,
 ) {
     val haptics = LocalHapticFeedback.current
     val p = LocalPalette.current
@@ -491,6 +493,21 @@ fun ResultsScreen(
                         color = p.accent, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
+            if (onPosture != null) {
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = onPosture,
+                    Modifier.fillMaxWidth().height(50.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, p.accent.copy(alpha = 0.6f)),
+                ) {
+                    Icon(Icons.Default.AccessibilityNew, null,
+                        Modifier.size(18.dp), tint = p.accent)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Check posture", fontWeight = FontWeight.SemiBold,
+                        color = p.accent)
+                }
+            }
             Text(
                 "Work Spot Score combines Wi-Fi, ping/jitter/loss, light, noise, orientation " +
                     "& cellular — weights adapt to ${mode.label} mode. " +
@@ -551,6 +568,28 @@ private fun RowScope.ExportChip(icon: androidx.compose.ui.graphics.vector.ImageV
     }
 }
 
+/** Grid 4×3 luminansi kamera belakang — makin terang sel makin accent. */
+@Composable
+private fun LightMapGrid(cells: List<Int>) {
+    val p = LocalPalette.current
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        for (r in 0 until 3) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (c in 0 until 4) {
+                    val v = (cells[r * 4 + c].coerceIn(0, 255)) / 255f
+                    Box(
+                        Modifier.size(30.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(p.accent.copy(alpha = 0.08f + v * 0.85f)),
+                    )
+                }
+            }
+        }
+        Text("Light map (camera)", style = MaterialTheme.typography.labelSmall,
+            color = p.textDim.copy(alpha = 0.7f))
+    }
+}
+
 /** Baris info kecil label→nilai untuk pembacaan ekstra (mesh, env, dst). */
 @Composable
 private fun InfoRow(label: String, value: String) {
@@ -600,6 +639,34 @@ private fun ExtraReadings(m: com.spotkerja.data.SpotMetrics) {
         if (m.routeHops.isNotEmpty()) {
             add("Route" to "${m.routeHops.size} hop(s) to ${m.routeTarget ?: "target"}")
         }
+        val net = listOfNotNull(
+            m.dnsMs?.let { "DNS ${it.toInt()} ms" },
+            m.tcpMs?.let { "TCP${m.tcpPort?.let { p -> ":$p" } ?: ""} ${it.toInt()} ms" },
+            m.tlsMs?.let { "TLS ${it.toInt()} ms" },
+            m.udpState?.let { "QUIC $it" },
+        )
+        if (net.isNotEmpty()) add("Net probes" to net.joinToString(" · "))
+        m.speechPct?.let {
+            add("Speech" to "${it.toInt()}% of windows have voices")
+        }
+        if (m.camLumaAvg != null) {
+            add("Light map" to listOfNotNull(
+                "avg ${m.camLumaAvg.toInt()}/255",
+                m.camLumaStd?.let { "uneven ±${it.toInt()}" },
+                m.camHotspot?.let { "hotspot $it" }).joinToString(" · "))
+        }
+        m.magneticStdDevUt?.let {
+            add("Magnetic" to "%.0f µT · ±%.1f µT".format(
+                m.magneticUt ?: 0f, it) +
+                if (it > 12f) " (unstable)" else "")
+        }
+        val therm = listOfNotNull(
+            m.thermalStatus?.let { listOf("normal", "light", "moderate", "severe",
+                "critical", "emergency", "shutdown").getOrElse(it) { "$it" } },
+            m.thermalHeadroom?.let { "headroom %.0f%%".format(it * 100f) },
+            m.batteryTempC?.let { "battery %.0f °C".format(it) },
+        )
+        if (therm.isNotEmpty()) add("Thermal" to therm.joinToString(" · "))
         if (m.soundLabels.isNotEmpty()) {
             add("Soundscape" to m.soundLabels.joinToString(" · "))
         }
@@ -629,6 +696,10 @@ private fun ExtraReadings(m: com.spotkerja.data.SpotMetrics) {
                     Modifier.padding(start = 14.dp, top = 1.dp),
                     style = MaterialTheme.typography.labelSmall, color = p.textDim)
             }
+        }
+        if (m.lightMap.size == 12) {
+            Spacer(Modifier.height(6.dp))
+            LightMapGrid(m.lightMap)
         }
         if (m.sensorsFound.isNotEmpty()) {
             Text(m.sensorsFound.joinToString(" · "),

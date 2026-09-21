@@ -44,7 +44,9 @@ class SoundClassifier private constructor(
         }.getOrNull() ?: return
         val bestIdx = scores.indices.maxByOrNull { scores[it] } ?: return
         val label = labels.getOrNull(bestIdx) ?: return
-        // "Silence" tidak informatif untuk soundscape — skip dari tally.
+        // Window dihitung untuk speech distraction — suara manusia = distraksi
+        // kerja; "Silence" tetap dihitung sebagai window non-speech.
+        acc.onSoundWindow(label in SPEECH_FAMILY && scores[bestIdx] >= 0.25f)
         if (label != "Silence" && scores[bestIdx] >= 0.25f) acc.addSound(label)
     }
 
@@ -52,6 +54,15 @@ class SoundClassifier private constructor(
 
     companion object {
         const val WINDOW = 15600 // 0.975 s @ 16 kHz — input YAMNet
+
+        /** Keluarga label YAMNet yang berarti ada percakapan/suara manusia. */
+        private val SPEECH_FAMILY = setOf(
+            "Speech", "Conversation", "Narration, monologue",
+            "Child speech, kid speaking", "Babbling", "Speech synthesizer",
+            "Male speech, man speaking", "Female speech, woman speaking",
+            "Shout", "Yell", "Whoop", "Whispering", "Singing",
+            "Telephone", "Ringtone",
+        )
 
         /** Load model + label dari assets; null bila gagal (metrik tetap jalan). */
         fun create(ctx: Context): SoundClassifier? = runCatching {

@@ -87,6 +87,33 @@ data class SpotMetrics(
     val stepsDuringScan: Int? = null,
     /** Nama sensor opsional yang terbaca di device ini. */
     val sensorsFound: List<String> = emptyList(),
+
+    // --- Network diagnostics (DNS/TCP/TLS/UDP) ---
+    val dnsMs: Float? = null,
+    val tcpMs: Float? = null,
+    val tcpPort: Int? = null,
+    val tlsMs: Float? = null,
+    /** "open" | "blocked" — UDP/QUIC keluar diizinkan jaringan atau tidak. */
+    val udpState: String? = null,
+
+    // --- Speech distraction (YAMNet speech-family share of windows) ---
+    val speechPct: Float? = null,
+
+    // --- Camera light map ---
+    val camLumaAvg: Float? = null,
+    val camLumaStd: Float? = null,
+    /** Arah sel paling terang, mis. "upper left" — indikasi jendela/silau. */
+    val camHotspot: String? = null,
+    /** 12 sel (4×3) luminansi 0–255 kamera belakang selama scan. */
+    val lightMap: List<Int> = emptyList(),
+
+    // --- Magnetic disturbance ---
+    val magneticStdDevUt: Float? = null,
+
+    // --- Thermal exposure ---
+    val thermalStatus: Int? = null,   // 0 none .. 6 shutdown
+    val thermalHeadroom: Float? = null, // 0..1, makin kecil makin panas
+    val batteryTempC: Float? = null,
 )
 
 /** Sub-skor 0–100 per metrik. null = metrik tidak tersedia di device. */

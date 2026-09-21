@@ -206,6 +206,16 @@ object ScoreEngine {
         metrics.meshApCount?.let { if (it > 0) notes += "Mesh network: $it other AP(s) share this SSID" }
         metrics.roamCount?.let { if (it > 0) notes += "Roamed between APs ${it}× during scan" }
         metrics.soundTop?.let { notes += "Dominant sound: $it" }
+        metrics.speechPct?.let {
+            if (it >= 30f) notes += "Speech distraction — voices in ${it.toInt()}% of scan"
+        }
+        metrics.camHotspot?.let { notes += "Bright hotspot on camera: $it side" }
+        metrics.magneticStdDevUt?.let {
+            if (it > 12f) notes += "Unstable magnetic field here — nearby metal/electronics?"
+        }
+        metrics.thermalStatus?.let {
+            if (it >= 3) notes += "Phone is heating up (thermal status $it)"
+        }
         return notes
     }
 

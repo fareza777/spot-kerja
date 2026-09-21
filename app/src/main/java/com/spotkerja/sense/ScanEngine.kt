@@ -36,6 +36,8 @@ class ScanEngine(private val ctx: Context) {
     private var noise: NoiseSampler? = null
     private var env: EnvSampler? = null
     private var classifier: SoundClassifier? = null
+    private var thermal: ThermalSampler? = null
+    private var camLight: CameraLightSampler? = null
 
     /** True bila scan selesai penuh (bukan dihentikan manual) — untuk auto-advance. */
     var onFinished: ((SpotResult) -> Unit)? = null
@@ -65,6 +67,11 @@ class ScanEngine(private val ctx: Context) {
         // YAMNet sound events ikut stream mic — gated oleh toggle Noise.
         classifier = if (opts.noise && opts.extended) SoundClassifier.create(ctx) else null
         noise = if (opts.noise) NoiseSampler(ctx, acc, classifier).also { it.start(scope) } else null
+        // Thermal — listener OS murah; bagian dari extended metrics.
+        thermal = if (opts.extended) ThermalSampler(ctx).also { it.start(acc) } else null
+        // Light map kamera — butuh izin CAMERA; gated oleh extended.
+        val camLight = if (opts.extended) CameraLightSampler(ctx).also {
+            this.camLight = it } else null
 
         job = scope.launch(Dispatchers.Default) {
             _progress.value = ScanProgress(running = true, totalSec = durationSec)
@@ -76,6 +83,15 @@ class ScanEngine(private val ctx: Context) {
             val routeJob = if (opts.ping && opts.extended)
                 launch(Dispatchers.IO) { RouteTracer().trace(acc, ping?.target()) }
             else null
+            // DNS/TCP/TLS/UDP probes + kamera light map — paralel, sekali per scan.
+            val probeJob = if (opts.extended)
+                launch(Dispatchers.IO) {
+                    delay(1500) // beri internet.check waktu jalan dulu
+                    NetworkProber().probe(acc, ping?.target(),
+                        acc.internetState == "ok")
+                }
+            else null
+            launch(Dispatchers.IO) { camLight?.start() }
             while (isActive && System.currentTimeMillis() < deadline) {
                 val rssi = wifi?.sample(acc)
                 val cellDbm = cell?.sample(acc)
@@ -103,6 +119,7 @@ class ScanEngine(private val ctx: Context) {
             }
             _progress.value = _progress.value.copy(live = _progress.value.live, elapsedSec = durationSec)
             routeJob?.join()
+            probeJob?.join()
             finish(acc, spotLabel, durationSec, mode, opts, onDone)
         }
     }
@@ -129,6 +146,7 @@ class ScanEngine(private val ctx: Context) {
         noise?.stop(); noise = null
         env?.stop(); env = null
         classifier?.close(); classifier = null
+        thermal?.stop(); thermal = null
         job?.cancel(); job = null
 
         val (_, pings, _) = acc.snapshot()
@@ -149,7 +167,14 @@ class ScanEngine(private val ctx: Context) {
 
         val (rssiL, pings2, luxL) = acc.snapshot()
         val noiseL = acc.noiseSnapshot()
+        // Light map kamera harus di-unbind di main thread — suspend call.
+        kotlinx.coroutines.runBlocking { camLight?.finish(acc) }
+        camLight = null
         val sounds = acc.topSounds(3)
+        val speechPct = if (acc.soundWindows > 0)
+            acc.speechWindows * 100f / acc.soundWindows else null
+        val magStd = synchronized(acc.magValues) { acc.magValues.toList() }
+            .stdDevOrNull()?.takeIf { acc.magValues.size >= 5 }
         val metrics = SpotMetrics(
             wifiRssiDbm = rssiL.avgOrNullI(),
             wifiLinkSpeedMbps = acc.linkSpeed,
@@ -194,6 +219,20 @@ class ScanEngine(private val ctx: Context) {
             magneticUt = acc.magneticUt,
             stepsDuringScan = acc.stepsDuringScan,
             sensorsFound = acc.sensorsFound,
+            dnsMs = acc.dnsMs,
+            tcpMs = acc.tcpMs,
+            tcpPort = acc.tcpPort,
+            tlsMs = acc.tlsMs,
+            udpState = acc.udpState,
+            speechPct = speechPct,
+            camLumaAvg = acc.camLumaAvg,
+            camLumaStd = acc.camLumaStd,
+            camHotspot = acc.camHotspot,
+            lightMap = acc.lightMap,
+            magneticStdDevUt = magStd,
+            thermalStatus = acc.thermalStatus,
+            thermalHeadroom = acc.thermalHeadroom,
+            batteryTempC = acc.batteryTempC,
         )
         val (scores, total) = ScoreEngine.scoreSpot(metrics, mode)
         val result = SpotResult(
@@ -236,6 +275,9 @@ class ScanEngine(private val ctx: Context) {
         noise?.stop(); noise = null
         env?.stop(); env = null
         classifier?.close(); classifier = null
+        thermal?.stop(); thermal = null
+        kotlinx.coroutines.runBlocking { camLight?.finish(ScanAccumulator()) }
+        camLight = null
         currentAcc = null
         _progress.value = ScanProgress()
     }

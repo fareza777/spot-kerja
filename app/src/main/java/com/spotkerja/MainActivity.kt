@@ -79,6 +79,7 @@ import com.spotkerja.ui.FocusScreen
 import com.spotkerja.ui.HistoryScreen
 import com.spotkerja.ui.HomeScreen
 import com.spotkerja.ui.OnboardingOverlay
+import com.spotkerja.ui.PostureScreen
 import com.spotkerja.ui.ResultsScreen
 import com.spotkerja.ui.ScanScreen
 import com.spotkerja.ui.SettingsScreen
@@ -145,6 +146,7 @@ object Routes {
     const val SETTINGS = "settings"
     const val SESSION = "session/{id}"
     const val FOCUS = "focus/{label}"
+    const val POSTURE = "posture"
     fun session(id: String) = "session/$id"
     fun focus(label: String) = "focus/${android.net.Uri.encode(label)}"
 }
@@ -232,6 +234,7 @@ fun SpotkerjaApp(vm: AppViewModel, widgetFastScan: MutableState<Boolean>) {
             Manifest.permission.ACCESS_COARSE_LOCATION,
             Manifest.permission.RECORD_AUDIO,
             Manifest.permission.ACTIVITY_RECOGNITION,
+            Manifest.permission.CAMERA,
         ))
     }
 
@@ -357,6 +360,10 @@ fun SpotkerjaApp(vm: AppViewModel, widgetFastScan: MutableState<Boolean>) {
                     exporting = exporting,
                     session = currentSession,
                     onFocusSpot = { label -> nav.navigate(Routes.focus(label)) },
+                    onPosture = {
+                        pendingScan = { nav.navigate(Routes.POSTURE) }
+                        permLauncher.launch(arrayOf(Manifest.permission.CAMERA))
+                    },
                     onCellAssign = { l, x, y ->
                         currentSession?.let { vm.setSpotCell(it.id, l, x, y) } },
                     onPickFavorite = { l ->
@@ -377,6 +384,9 @@ fun SpotkerjaApp(vm: AppViewModel, widgetFastScan: MutableState<Boolean>) {
                     onLogMinutes = vm::logFocus,
                     onDone = { nav.popBackStack() },
                 )
+            }
+            composable(Routes.POSTURE) {
+                PostureScreen(onDone = { nav.popBackStack() })
             }
             composable(Routes.HISTORY) {
                 HistoryScreen(
@@ -434,6 +444,10 @@ fun SpotkerjaApp(vm: AppViewModel, widgetFastScan: MutableState<Boolean>) {
                         onBack = { nav.popBackStack() },
                         session = s,
                         onFocusSpot = { l -> nav.navigate(Routes.focus(l)) },
+                        onPosture = {
+                            pendingScan = { nav.navigate(Routes.POSTURE) }
+                            permLauncher.launch(arrayOf(Manifest.permission.CAMERA))
+                        },
                         onCellAssign = { l, x, y -> vm.setSpotCell(s.id, l, x, y) },
                         onPickFavorite = { l -> vm.setUserPick(s.id, l) },
                         onAssignRoom = { r -> vm.setSessionRoom(s.id, r) },

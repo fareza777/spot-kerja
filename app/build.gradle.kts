@@ -20,8 +20,8 @@ android {
         applicationId = "com.spotwise.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "2.6.0"
+        versionCode = 12
+        versionName = "2.7.0"
     }
 
     signingConfigs {
@@ -89,6 +89,11 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.play.services.ads)
     implementation(libs.tensorflow.lite)
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.mediapipe.tasks.vision)
     debugImplementation(libs.androidx.compose.ui.tooling)
     testImplementation(libs.junit)
 }

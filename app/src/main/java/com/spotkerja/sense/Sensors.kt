@@ -84,9 +84,35 @@ class ScanAccumulator {
     var humidityPct: Float? = null
     var ambientTempC: Float? = null
     var magneticUt: Float? = null
+    val magValues = mutableListOf<Float>()
     private var stepBase: Float? = null
     var stepsDuringScan: Int? = null
     var sensorsFound: List<String> = emptyList()
+
+    // --- Network diagnostics ---
+    var dnsMs: Float? = null
+    var tcpMs: Float? = null
+    var tcpPort: Int? = null
+    var tlsMs: Float? = null
+    var udpState: String? = null
+
+    // --- Speech distraction (dari YAMNet windows) ---
+    var speechWindows: Int = 0
+    var soundWindows: Int = 0
+    @Synchronized fun onSoundWindow(speech: Boolean) {
+        soundWindows++; if (speech) speechWindows++
+    }
+
+    // --- Camera light map ---
+    var camLumaAvg: Float? = null
+    var camLumaStd: Float? = null
+    var camHotspot: String? = null
+    var lightMap: List<Int> = emptyList()
+
+    // --- Thermal ---
+    var thermalStatus: Int? = null
+    var thermalHeadroom: Float? = null
+    var batteryTempC: Float? = null
 
     @Synchronized fun addRssi(v: Int) { rssi += v }
     @Synchronized fun addPing(v: Float?) { pingAttempts++; v?.let { pings += it } }
@@ -436,7 +462,9 @@ class EnvSampler(ctx: Context, private val acc: ScanAccumulator) : SensorEventLi
             Sensor.TYPE_AMBIENT_TEMPERATURE -> acc.ambientTempC = e.values[0]
             Sensor.TYPE_MAGNETIC_FIELD -> {
                 val (x, y, z) = e.values
-                acc.magneticUt = sqrt(x * x + y * y + z * z)
+                val mag = sqrt(x * x + y * y + z * z)
+                acc.magneticUt = mag
+                synchronized(acc.magValues) { acc.magValues += mag }
             }
             Sensor.TYPE_STEP_COUNTER -> acc.onStepCounter(e.values[0])
         }
