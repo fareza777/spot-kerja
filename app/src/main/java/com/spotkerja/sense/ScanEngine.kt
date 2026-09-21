@@ -167,8 +167,8 @@ class ScanEngine(private val ctx: Context) {
 
         val (rssiL, pings2, luxL) = acc.snapshot()
         val noiseL = acc.noiseSnapshot()
-        // Light map kamera harus di-unbind di main thread — suspend call.
-        kotlinx.coroutines.runBlocking { camLight?.finish(acc) }
+        // Light map kamera — unbind di-post ke main, aman dari thread manapun.
+        camLight?.finish(acc)
         camLight = null
         val sounds = acc.topSounds(3)
         val speechPct = if (acc.soundWindows > 0)
@@ -276,7 +276,7 @@ class ScanEngine(private val ctx: Context) {
         env?.stop(); env = null
         classifier?.close(); classifier = null
         thermal?.stop(); thermal = null
-        kotlinx.coroutines.runBlocking { camLight?.finish(ScanAccumulator()) }
+        camLight?.finish(ScanAccumulator())
         camLight = null
         currentAcc = null
         _progress.value = ScanProgress()

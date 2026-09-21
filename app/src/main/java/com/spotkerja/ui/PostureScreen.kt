@@ -70,6 +70,7 @@ fun PostureScreen(onDone: () -> Unit) {
     var measuring by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<PostureResult?>(null) }
     var noPose by remember { mutableStateOf(false) }
+    var modelFailed by remember { mutableStateOf(false) }
     var attempt by remember { mutableStateOf(0) }
 
     // Landmark terakumulasi — diisi analyzer thread, dibaca saat selesai.
@@ -109,6 +110,7 @@ fun PostureScreen(onDone: () -> Unit) {
                     .build())
         }.getOrNull()
         landmarker = lm
+        modelFailed = (lm == null)
         onDispose { runCatching { lm?.close() } }
     }
 
@@ -193,6 +195,17 @@ fun PostureScreen(onDone: () -> Unit) {
             if (noPose) {
                 Spacer(Modifier.height(12.dp))
                 Text("No person detected — point the front camera at yourself while seated.",
+                    style = MaterialTheme.typography.bodySmall, color = p.gold)
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = {
+                    noPose = false; secondsLeft = 6
+                    necks.clear(); tilts.clear(); leans.clear()
+                    attempt++
+                }) { Text("Try again", color = p.accent) }
+            }
+            if (modelFailed) {
+                Spacer(Modifier.height(12.dp))
+                Text("Pose model unavailable on this device.",
                     style = MaterialTheme.typography.bodySmall, color = p.gold)
             }
         } else {

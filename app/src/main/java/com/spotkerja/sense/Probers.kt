@@ -18,6 +18,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
+import android.os.Handler
+import android.os.Looper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.DatagramPacket
@@ -217,9 +219,10 @@ class CameraLightSampler(private val ctx: Context) {
         frames++
     }
 
-    /** Tulis hasil ke accumulator. Panggil setelah scan selesai. */
-    suspend fun finish(acc: ScanAccumulator) {
-        withContext(Dispatchers.Main) {
+    /** Tulis hasil ke accumulator. Panggil setelah scan selesai — aman dari
+     *  thread manapun; unbind di-post ke main (bindToLifecycle wajib main). */
+    fun finish(acc: ScanAccumulator) {
+        Handler(Looper.getMainLooper()).post {
             runCatching { provider?.unbindAll() }
             lifecycle.close()
         }
