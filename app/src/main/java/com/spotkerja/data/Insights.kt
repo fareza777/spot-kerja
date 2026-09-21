@@ -20,7 +20,9 @@ object Insights {
     fun glareWindows(session: ScanSession): List<GlareWindow> {
         val lat = session.latDeg ?: return emptyList()
         val lon = session.lonDeg ?: return emptyList()
-        val now = session.createdAtEpochMs
+        // Ramalan dihitung dari sekarang — azimuth terukur sesi tetap dipakai,
+        // jadi sesi lama pun tetap menampilkan jendela silau ke depan.
+        val now = System.currentTimeMillis()
         return session.spots.mapNotNull { s ->
             val az = s.metrics.azimuthDeg ?: return@mapNotNull null
             // Window: jam-jam berurutan dengan sunAzimuth dalam 45° azimuth hadap.

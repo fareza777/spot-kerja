@@ -305,7 +305,7 @@ fun ResultsScreen(
                         Spacer(Modifier.width(10.dp))
                         Text(
                             if (session.userPickLabel == session.bestSpotLabel)
-                                "Your pick matches the data — $session.userPickLabel wins."
+                                "Your pick matches the data — ${session.userPickLabel} wins."
                             else "You picked ${session.userPickLabel}; data scored " +
                                 "${session.bestSpotLabel} highest.",
                             style = MaterialTheme.typography.bodySmall, color = p.textDim,

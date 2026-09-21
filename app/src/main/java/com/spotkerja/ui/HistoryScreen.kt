@@ -241,7 +241,9 @@ fun HistoryScreen(
                                                 else p.accent.copy(alpha = 0.55f)),
                                     )
                                     Spacer(Modifier.height(4.dp))
-                                    Text(b.label.take(4), style = MaterialTheme.typography.labelSmall,
+                                    Text(listOf("AM", "Noon", "PM", "Eve", "Night")[
+                                        busy.indexOf(b)],
+                                        style = MaterialTheme.typography.labelSmall,
                                         color = p.textDim, maxLines = 1)
                                 }
                             }
