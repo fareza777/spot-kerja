@@ -22,6 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -604,108 +605,298 @@ private fun InfoRow(label: String, value: String) {
     }
 }
 
-/** Pembacaan ekstra hasil deep metrics — hanya baris yang punya data tampil. */
+/** Judul grup kecil: icon + label caps. */
+@Composable
+private fun DeepGroupTitle(icon: androidx.compose.ui.graphics.vector.ImageVector,
+                           title: String, trailing: (@Composable () -> Unit)? = null) {
+    val p = LocalPalette.current
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, Modifier.size(15.dp), tint = p.accent)
+        Spacer(Modifier.width(6.dp))
+        Text(title, style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold, color = p.textDim,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (trailing != null) { Spacer(Modifier.weight(1f)); trailing() }
+    }
+}
+
+/** Tile stat kecil — angka besar + label. */
+@Composable
+private fun RowScope.SmallTile(value: String, label: String) {
+    val p = LocalPalette.current
+    Surface(
+        modifier = Modifier.weight(1f),
+        shape = RoundedCornerShape(10.dp),
+        color = p.high, border = BorderStroke(1.dp, p.border),
+    ) {
+        Column(Modifier.padding(horizontal = 8.dp, vertical = 7.dp)) {
+            Text(value, style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.ExtraBold, color = p.text,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(label, style = MaterialTheme.typography.labelSmall,
+                color = p.textDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+/** Pill status berwarna (good/mid/bad). */
+@Composable
+private fun StatusPill(text: String, color: Color) {
+    Surface(shape = RoundedCornerShape(8.dp),
+        color = color.copy(alpha = 0.14f),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.5f))) {
+        Text(text, Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold, color = color,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** Track bar tipis untuk gauge/persen. */
+@Composable
+private fun GaugeBar(frac: Float, color: Color, modifier: Modifier = Modifier) {
+    val p = LocalPalette.current
+    Box(
+        modifier.fillMaxWidth().height(6.dp)
+            .clip(RoundedCornerShape(3.dp))
+            .background(p.border.copy(alpha = 0.4f)),
+    ) {
+        Box(
+            Modifier.fillMaxWidth(frac.coerceIn(0f, 1f)).fillMaxHeight()
+                .clip(RoundedCornerShape(3.dp)).background(color),
+        )
+    }
+}
+
+/** Pembacaan ekstra deep metrics — grup visual, bukan daftar teks mentah. */
 @Composable
 private fun ExtraReadings(m: com.spotkerja.data.SpotMetrics) {
     val p = LocalPalette.current
-    val rows = buildList<Pair<String, String>> {
-        m.internetState?.let {
-            add("Internet" to when (it) {
-                "ok" -> "online"
-                "captive" -> "captive portal"
-                "limited" -> "unverified"
-                else -> "offline"
-            })
-        }
-        if (m.wifiSsid != null || m.channelWidthMhz != null || m.wifiBand != null) {
-            add("Radio" to listOfNotNull(
-                m.wifiSsid, m.wifiBand,
-                m.channelWidthMhz?.let { "$it MHz" }).joinToString(" · "))
-        }
-        if (m.rxLinkSpeedMbps != null || m.txLinkSpeedMbps != null) {
-            add("Link speed" to
-                "↓${m.rxLinkSpeedMbps ?: "—"} / ↑${m.txLinkSpeedMbps ?: "—"} Mbps" +
-                (m.estThroughputMbps?.let { " · est. ≈${it.toInt()} Mbps" } ?: ""))
-        }
-        if (m.meshApCount != null || m.roamCount != null) {
-            add("Mesh" to listOfNotNull(
-                m.meshApCount?.let { "${it + 1} APs share SSID" },
-                m.roamCount?.let { "roamed $it×" }).joinToString(" · "))
-        }
-        if (m.rssiMinDbm != null && m.rssiMaxDbm != null &&
-            m.rssiMinDbm != m.rssiMaxDbm) {
-            add("RSSI range" to "${m.rssiMinDbm}…${m.rssiMaxDbm} dBm")
-        }
-        if (m.routeHops.isNotEmpty()) {
-            add("Route" to "${m.routeHops.size} hop(s) to ${m.routeTarget ?: "target"}")
-        }
-        val net = listOfNotNull(
-            m.dnsMs?.let { "DNS ${it.toInt()} ms" },
-            m.tcpMs?.let { "TCP${m.tcpPort?.let { p -> ":$p" } ?: ""} ${it.toInt()} ms" },
-            m.tlsMs?.let { "TLS ${it.toInt()} ms" },
-            m.udpState?.let { "QUIC $it" },
-        )
-        if (net.isNotEmpty()) add("Net probes" to net.joinToString(" · "))
-        m.speechPct?.let {
-            add("Speech" to "${it.toInt()}% of windows have voices")
-        }
-        if (m.camLumaAvg != null) {
-            add("Light map" to listOfNotNull(
-                "avg ${m.camLumaAvg.toInt()}/255",
-                m.camLumaStd?.let { "uneven ±${it.toInt()}" },
-                m.camHotspot?.let { "hotspot $it" }).joinToString(" · "))
-        }
-        m.magneticStdDevUt?.let {
-            add("Magnetic" to "%.0f µT · ±%.1f µT".format(
-                m.magneticUt ?: 0f, it) +
-                if (it > 12f) " (unstable)" else "")
-        }
-        val therm = listOfNotNull(
-            m.thermalStatus?.let { listOf("normal", "light", "moderate", "severe",
-                "critical", "emergency", "shutdown").getOrElse(it) { "$it" } },
-            m.thermalHeadroom?.let { "headroom %.0f%%".format(it * 100f) },
-            m.batteryTempC?.let { "battery %.0f °C".format(it) },
-        )
-        if (therm.isNotEmpty()) add("Thermal" to therm.joinToString(" · "))
-        if (m.soundLabels.isNotEmpty()) {
-            add("Soundscape" to m.soundLabels.joinToString(" · "))
-        }
-        val env = listOfNotNull(
-            m.ambientTempC?.let { "%.1f °C".format(it) },
-            m.humidityPct?.let { "%.0f%% RH".format(it) },
-            m.pressureHpa?.let { "%.0f hPa".format(it) },
-            m.altitudeM?.let { "≈${it.toInt()} m alt." },
-            m.magneticUt?.let { "%.0f µT".format(it) },
-            m.stepsDuringScan?.let { "$it steps" },
-        )
-        if (env.isNotEmpty()) add("Environment" to env.joinToString(" · "))
-        if (m.sensorsFound.isNotEmpty()) {
-            add("Sensors" to "${m.sensorsFound.size} readable")
-        }
-    }
-    if (rows.isEmpty() && m.routeHops.isEmpty()) return
+
+    val hasNet = m.internetState != null || m.dnsMs != null || m.tcpMs != null ||
+        m.tlsMs != null || m.udpState != null
+    val hasAudio = m.speechPct != null || m.soundLabels.isNotEmpty()
+    val hasLight = m.lightMap.size == 12 && m.camLumaAvg != null
+    val hasThermal = m.batteryTempC != null || m.thermalStatus != null ||
+        m.thermalHeadroom != null
+    val envTiles = listOfNotNull(
+        m.ambientTempC?.let { "%.1f°" to "Ambient" },
+        m.humidityPct?.let { "%.0f%%" to "Humidity" },
+        m.pressureHpa?.let { "%.0f" to "hPa" },
+        m.altitudeM?.let { "${it.toInt()}m" to "Altitude" },
+        m.stepsDuringScan?.let { "$it" to "Steps" },
+    )
+    val hasMag = m.magneticUt != null || m.magneticStdDevUt != null
+    val hasRadio = m.wifiSsid != null || m.channelWidthMhz != null ||
+        m.wifiBand != null || m.rxLinkSpeedMbps != null || m.txLinkSpeedMbps != null ||
+        m.meshApCount != null || m.roamCount != null ||
+        (m.rssiMinDbm != null && m.rssiMaxDbm != null && m.rssiMinDbm != m.rssiMaxDbm)
+    val hasRoute = m.routeHops.isNotEmpty()
+
+    if (!hasNet && !hasAudio && !hasLight && !hasThermal && envTiles.isEmpty() &&
+        !hasMag && !hasRadio && !hasRoute && m.sensorsFound.isEmpty()) return
+
     Spacer(Modifier.height(14.dp))
     HorizontalDivider(color = p.border)
-    Spacer(Modifier.height(10.dp))
-    Column {
-        rows.forEach { (l, v) -> InfoRow(l, v) }
-        if (m.routeHops.isNotEmpty()) {
-            Spacer(Modifier.height(4.dp))
-            m.routeHops.forEachIndexed { i, hop ->
-                Text("${i + 1}. $hop",
-                    Modifier.padding(start = 14.dp, top = 1.dp),
-                    style = MaterialTheme.typography.labelSmall, color = p.textDim)
+    Spacer(Modifier.height(12.dp))
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+
+        // ---- Network diagnostics ---------------------------------------------
+        if (hasNet) {
+            Column {
+                DeepGroupTitle(Icons.Default.NetworkPing, "NETWORK") {
+                    m.internetState?.let { st ->
+                        val (txt, col) = when (st) {
+                            "ok" -> "online" to p.good
+                            "captive" -> "captive portal" to p.bad
+                            "limited" -> "unverified" to p.gold
+                            else -> "offline" to p.textDim
+                        }
+                        StatusPill(txt, col)
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                val tiles = listOfNotNull(
+                    m.dnsMs?.let { "${it.toInt()}ms" to "DNS" },
+                    m.tcpMs?.let { "${it.toInt()}ms" to "TCP${m.tcpPort?.let { pt -> ":$pt" } ?: ""}" },
+                    m.tlsMs?.let { "${it.toInt()}ms" to "TLS" },
+                    m.udpState?.let { it to "QUIC" },
+                )
+                if (tiles.isNotEmpty()) {
+                    tiles.chunked(4).forEach { row ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            row.forEach { (v, l) -> SmallTile(v, l) }
+                            repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
+                }
             }
         }
-        if (m.lightMap.size == 12) {
-            Spacer(Modifier.height(6.dp))
-            LightMapGrid(m.lightMap)
+
+        // ---- Soundscape --------------------------------------------------------
+        if (hasAudio) {
+            Column {
+                DeepGroupTitle(Icons.Default.Mic, "SOUNDSCAPE") {
+                    m.speechPct?.let { sp ->
+                        val (txt, col) = when {
+                            sp < 15f -> "quiet" to p.good
+                            sp < 35f -> "noticeable" to p.gold
+                            else -> "distracting" to p.bad
+                        }
+                        StatusPill(txt, col)
+                    }
+                }
+                m.speechPct?.let { sp ->
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Speech", Modifier.width(52.dp),
+                            style = MaterialTheme.typography.labelSmall, color = p.textDim)
+                        GaugeBar(sp / 100f, when {
+                            sp < 15f -> p.good; sp < 35f -> p.gold; else -> p.bad
+                        }, Modifier.weight(1f))
+                        Text("${sp.toInt()}%", Modifier.padding(start = 8.dp).width(30.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold, color = p.text,
+                            textAlign = TextAlign.End)
+                    }
+                }
+                if (m.soundLabels.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        m.soundLabels.take(3).forEach {
+                            StatusPill(it, p.accent2)
+                        }
+                    }
+                }
+            }
         }
-        if (m.sensorsFound.isNotEmpty()) {
-            Text(m.sensorsFound.joinToString(" · "),
-                Modifier.padding(start = 14.dp, top = 3.dp),
-                style = MaterialTheme.typography.labelSmall,
-                color = p.textDim.copy(alpha = 0.7f))
+
+        // ---- Camera light map --------------------------------------------------
+        if (hasLight) {
+            Column {
+                DeepGroupTitle(Icons.Default.Lightbulb, "LIGHT MAP") {
+                    m.camHotspot?.let { StatusPill("hotspot $it", p.gold) }
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    LightMapGrid(m.lightMap)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            SmallTile("${m.camLumaAvg!!.toInt()}", "Avg /255")
+                            m.camLumaStd?.let { SmallTile("±${it.toInt()}", "Uneven") }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---- Thermal ------------------------------------------------------------
+        if (hasThermal) {
+            Column {
+                DeepGroupTitle(Icons.Default.Thermostat, "THERMAL") {
+                    m.thermalStatus?.let { st ->
+                        val label = listOf("normal", "light", "moderate", "severe",
+                            "critical", "emergency", "shutdown").getOrElse(st) { "level $st" }
+                        StatusPill(label, when {
+                            st <= 1 -> p.good; st == 2 -> p.gold; else -> p.bad
+                        })
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                m.batteryTempC?.let { t ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Battery", Modifier.width(52.dp),
+                            style = MaterialTheme.typography.labelSmall, color = p.textDim)
+                        GaugeBar(((t - 25f) / 20f), when {
+                            t < 35f -> p.good; t < 40f -> p.gold; else -> p.bad
+                        }, Modifier.weight(1f))
+                        Text("%.0f°C".format(t),
+                            Modifier.padding(start = 8.dp).width(38.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold, color = p.text,
+                            textAlign = TextAlign.End)
+                    }
+                }
+                m.thermalHeadroom?.let { h ->
+                    Spacer(Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Headroom", Modifier.width(52.dp),
+                            style = MaterialTheme.typography.labelSmall, color = p.textDim)
+                        GaugeBar(h, when {
+                            h > 0.5f -> p.good; h > 0.25f -> p.gold; else -> p.bad
+                        }, Modifier.weight(1f))
+                        Text("%.0f%%".format(h * 100f),
+                            Modifier.padding(start = 8.dp).width(38.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold, color = p.text,
+                            textAlign = TextAlign.End)
+                    }
+                }
+            }
+        }
+
+        // ---- Magnetic + environment ---------------------------------------------
+        if (hasMag || envTiles.isNotEmpty()) {
+            Column {
+                DeepGroupTitle(Icons.Default.Explore, "ENVIRONMENT")
+                Spacer(Modifier.height(8.dp))
+                val tiles = (envTiles + listOfNotNull(
+                    m.magneticUt?.let { "%.0fµT".format(it) to "Magnetic" },
+                    m.magneticStdDevUt?.let {
+                        "±%.1f".format(it) to if (it > 12f) "Unstable" else "Stable"
+                    },
+                )).chunked(4)
+                tiles.forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        row.forEach { (v, l) -> SmallTile(v, l) }
+                        repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
+            }
+        }
+
+        // ---- Radio / route (teknis, tetap baris ringkas) --------------------------
+        if (hasRadio || hasRoute || m.sensorsFound.isNotEmpty()) {
+            Column {
+                DeepGroupTitle(Icons.Default.Wifi, "RADIO & ROUTE")
+                Spacer(Modifier.height(4.dp))
+                if (m.wifiSsid != null || m.channelWidthMhz != null || m.wifiBand != null) {
+                    InfoRow("Radio", listOfNotNull(
+                        m.wifiSsid, m.wifiBand,
+                        m.channelWidthMhz?.let { "$it MHz" }).joinToString(" · "))
+                }
+                if (m.rxLinkSpeedMbps != null || m.txLinkSpeedMbps != null) {
+                    InfoRow("Link", "↓${m.rxLinkSpeedMbps ?: "—"} / ↑${m.txLinkSpeedMbps ?: "—"} Mbps" +
+                        (m.estThroughputMbps?.let { " · est. ≈${it.toInt()}" } ?: ""))
+                }
+                if (m.meshApCount != null || m.roamCount != null) {
+                    InfoRow("Mesh", listOfNotNull(
+                        m.meshApCount?.let { "${it + 1} APs" },
+                        m.roamCount?.let { "roamed $it×" }).joinToString(" · "))
+                }
+                if (m.rssiMinDbm != null && m.rssiMaxDbm != null &&
+                    m.rssiMinDbm != m.rssiMaxDbm) {
+                    InfoRow("RSSI", "${m.rssiMinDbm}…${m.rssiMaxDbm} dBm")
+                }
+                if (hasRoute) {
+                    InfoRow("Route", "${m.routeHops.size} hop(s) to ${m.routeTarget ?: "target"}")
+                    m.routeHops.forEachIndexed { i, hop ->
+                        Text("${i + 1}. $hop",
+                            Modifier.padding(start = 14.dp, top = 1.dp),
+                            style = MaterialTheme.typography.labelSmall, color = p.textDim)
+                    }
+                }
+                if (m.sensorsFound.isNotEmpty()) {
+                    InfoRow("Sensors", "${m.sensorsFound.size} readable")
+                    Text(m.sensorsFound.joinToString(" · "),
+                        Modifier.padding(start = 14.dp, top = 1.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = p.textDim.copy(alpha = 0.7f))
+                }
+            }
         }
     }
 }
